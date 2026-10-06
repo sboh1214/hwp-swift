@@ -177,7 +177,8 @@ import XCTest
         /// 허용이 아니다 — 문단 폭 405.2pt(왼쪽 여백 20)의 415pt 표 + 뒤 글자는 컨테이너 425.2pt를 살짝
         /// 넘을 뿐이지만 개체가 줄에 안 들어가므로 공유 코어가 줄 시작(20)에 두고 뒤 글자를 다음 줄로
         /// 보낸다. 한 줄씩 들어가는 개체 둘(220 + 220pt)도 합이 가용 폭을 넘으면 마찬가지다. 개체가
-        /// 줄에 들어가고 글자까지 더해 살짝 넘치는 줄(글꼴 차)은 종전대로 허용이다.
+        /// 줄에 들어가고 글자가 개체가 남긴 폭을 글꼴 차 정도(허용 배율)만 넘는 줄은 종전대로 허용이다 —
+        /// 300pt 표 뒤 126.4pt 글자(남은 폭 125.2pt).
         func testObjectsOverflowingTheAvailableWidthAreNotSlightOverflow() {
             let indented = Self.string(
                 objectWidth: 415, tail: "뒤뒤", alignment: .center,
@@ -198,10 +199,40 @@ import XCTest
                 attributedString: pair, lineWidth: 425.2
             )).to(beNil())
 
-            let fitting = Self.string(objectWidth: 400, tail: "가나다", alignment: .center)
+            let fitting = Self.string(
+                objectWidth: 300, tail: String(repeating: "a", count: 21), alignment: .center
+            )
             expect(HwpDrawnTextLayout.slightOverflowLineMetrics(
                 attributedString: fitting, lineWidth: 425.2
             )).notTo(beNil())
+        }
+
+        /// 개체 뒤 글자가 개체가 남긴 폭을 허용 배율(1.06)보다 많이 넘으면 slight-overflow 한 줄 허용이
+        /// 아니다 (#254 PR 리뷰) — 한글 12.30 실측(본문 425.2pt, 왼쪽 정렬): 가용 폭을 다 채운 표 뒤
+        /// '뒤'와 420pt 표 뒤 '뒤뒤'는 다음 줄 85.08pt에서 시작한다. 줄 전체로 재면 둘 다 허용 배율 안이라
+        /// 한 줄로 접혀 글자가 표 오른쪽 밖에 그려졌다. 공유 코어가 맡아 글자를 다음 줄로 보낸다. 남은
+        /// 폭은 컨테이너가 아니라 **가용 폭**에서 뺀다 — 첫 줄 들여쓰기 20pt면 300pt 표 뒤 126.4pt 글자는
+        /// 남은 폭 105.2pt에 허용 배율로도 들지 않는다(컨테이너 기준 125.2pt면 허용).
+        func testTextThatDoesNotFitBesideAnObjectIsNotSlightOverflow() {
+            for (width, tail) in [(CGFloat(425.2), "W"), (420, "WW")] {
+                let string = Self.string(objectWidth: width, tail: tail, alignment: .left)
+                expect(HwpDrawnTextLayout.slightOverflowLineMetrics(
+                    attributedString: string, lineWidth: 425.2
+                )).to(beNil(), description: "\(width)")
+                let lines = Self.lines(string, lineWidth: 425.2)
+                expect(lines.count).to(equal(2), description: "\(width)")
+                expect(lines.last?.range.location).to(equal(1), description: "\(width)")
+            }
+            let indented = Self.string(
+                objectWidth: 300, tail: String(repeating: "a", count: 21), alignment: .left,
+                firstLineHeadIndent: 20, headIndent: 20
+            )
+            expect(HwpDrawnTextLayout.slightOverflowLineMetrics(
+                attributedString: indented, lineWidth: 425.2
+            )).to(beNil())
+            let lines = Self.lines(indented, lineWidth: 425.2)
+            expect(lines.map(\.range.location)) == [0, 1]
+            expect(lines.first?.x) == 20
         }
 
         /// 렌더(`HwpDrawnTextLayout.lines`)도 같은 코어의 origin을 쓴다 — 넘친 줄의 그려지는 x가 줄 시작이다.
