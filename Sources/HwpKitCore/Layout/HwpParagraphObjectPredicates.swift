@@ -78,6 +78,15 @@ extension HwpParagraphObjectCollector {
         }
     }
 
+    /// 가로 자리를 앵커 규칙 + 바깥 상자(표 + 좌우 바깥 여백)로 잡는 표인지 — 글자처럼 취급이
+    /// 아니고 흐름을 차지하는(자리 차지·어울림) 표 (#254). **이 술어의 소유자는 여기다** — 페이지
+    /// 경로(`HwpPaginator.flowTableOriginX`)와 각주·미주 수집기(`table`)가 같은 답을 써야 한다.
+    /// 글 앞·뒤로 표는 두 경로 모두 바깥 여백을 보지 않는다(`anchoredObjectFrame`, 한글 미실측).
+    static func alignsByOuterBox(_ property: CoreHwp.HwpCommonCtrlProperty) -> Bool {
+        let info = property.propertyInfo
+        return !info.treatAsChar && consumesFlow(info)
+    }
+
     /// 컨테이너 높이를 키워야 하는 개체인지 — 글자처럼 취급이 **아니고**,
     /// 세로 기준이 **'문단'**이고, 배치 방식이 **흐름을 점유**하는 것 (#91).
     ///

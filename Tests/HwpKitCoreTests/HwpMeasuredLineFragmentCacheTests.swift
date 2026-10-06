@@ -92,13 +92,16 @@ import XCTest
         /// (표식)과 나머지 둘(무표식)로 나뉜다.
         func testTableRowSplitKeepsTheCachedRemainderFragmentUnmarked() async throws {
             let cell = try Self.cachedParagraph()
+            // 칸 폭 = 단 폭 (가로 30자) — 표는 단 폭으로 줄지 않으므로 칸 폭을 직접 맞춘다 (#254).
+            let columnWidth = Support.columnWidth(charactersPerLine: 30, in: Self.built(cell))
             var host = try HwpSynthetic.textParagraph("")
             host.ctrlHeaderArray = [.table(HwpSynthetic.table(
-                cellWidth: 20000, rowHeights: [1000], cellParagraphs: [[[cell]]]
+                cellWidth: Support.hwpUnits(columnWidth), rowHeights: [1000],
+                cellParagraphs: [[[cell]]]
             ))]
             let section = HwpSynthetic.section(
                 firstParagraphControls: [.section(Support.sectionDef(
-                    columnWidth: Support.columnWidth(charactersPerLine: 30, in: Self.built(cell)),
+                    columnWidth: columnWidth,
                     contentHeight: 40
                 ))],
                 bodyParagraphs: [host]

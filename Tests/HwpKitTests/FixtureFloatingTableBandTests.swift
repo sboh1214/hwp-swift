@@ -78,7 +78,9 @@ final class FixtureFloatingTableBandTests: XCTestCase {
     /// 표 상단 + 셀 위 여백 1.41 + 0.85 × 10pt = 662.03 + 9.91 = 671.94 / 102.03 + 9.91 =
     /// 111.94 / 글줄 상단 233.06 + 8.5 = 241.56이라 0.06pt 안이다 (캐시 `vertpos` 13386 =
     /// 233.06 − 99.20 = 133.86pt 도 같다). 고치기 전에는 글줄을 1단 659.20에 먼저 놓고 표를
-    /// 6행/11행으로 갈랐다. 남은 격차는 표 x의 바깥 왼쪽 여백 2.83pt(#161부터)뿐이다.
+    /// 6행/11행으로 갈랐다. 표 x는 단 왼쪽 + 바깥 왼쪽 여백 2.83pt다 (#254 — #161부터 남은
+    /// 격차였다; 한글 PDF 2단 표 왼 변 중심은 단선 행 306.0·306.12, 2중선 행은 두 획 305.88·
+    /// 306.24 — 303.31 + 2.83 = 306.14의 장치 격자 반올림).
     func testLineShapesTablePrecedesItsParagraphLineAcrossColumnsInBothFormats() async throws {
         for hwpx in [false, true] {
             let format = hwpx ? "HWPX" : "HWP"
@@ -107,13 +109,13 @@ final class FixtureFloatingTableBandTests: XCTestCase {
             }
             // 1단 조각: 앞 문단 끝 659.20 + 위 여백 2.83 = 662.03, 7행 89.74pt.
             expect(tables[0].frame.minX)
-                .to(beCloseTo(before.frame.minX, within: 0.01), description: format)
+                .to(beCloseTo(before.frame.minX + 2.83, within: 0.01), description: format)
             expect(tables[0].frame.minY)
                 .to(beCloseTo(before.frame.maxY + 2.83, within: 0.01), description: format)
             expect(tables[0].frame.minY).to(beCloseTo(662.03, within: 0.01), description: format)
             expect(tables[0].frame.height).to(beCloseTo(89.74, within: 0.01), description: format)
             // 2단 조각: 단 상단 99.20 + 위 여백 2.83, 10행 128.20pt.
-            expect(tables[1].frame.minX).to(beCloseTo(303.31, within: 0.01), description: format)
+            expect(tables[1].frame.minX).to(beCloseTo(306.14, within: 0.01), description: format)
             expect(tables[1].frame.minY).to(beCloseTo(102.03, within: 0.01), description: format)
             expect(tables[1].frame.height).to(beCloseTo(128.20, within: 0.01), description: format)
             // 글줄: 2단의 표 아래 + 아래 여백 = 233.06 (한글 캐시 vertpos 13386).

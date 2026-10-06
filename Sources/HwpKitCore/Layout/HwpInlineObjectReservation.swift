@@ -4,7 +4,10 @@ import CoreText
 import Foundation
 
 public extension HwpAttributedStringKey {
-    /// treatAsChar 개체 마커가 예약한 **폭**의 저장값 (NSNumber, 표 70 width).
+    /// treatAsChar 개체 마커가 예약한 **폭**을 다른 단 기하로 다시 풀 상대 저장값 (NSNumber,
+    /// 10000 = 100%). 개체는 표 70 width 그대로이고, **글자처럼 취급 표는 저장값과 무관하게
+    /// 10000**(`HwpTableLayout.fullBasisWidthRaw`)이다 — 한글은 상대 기준 표를 기준 폭 100%로
+    /// 그리고 다시 저장할 때 그 폭을 HWPUNIT으로 쓰므로 저장값을 퍼센트로 읽을 수 없다 (#254).
     /// `inlineObjectWidthBasis`와 짝으로만 붙는다.
     static let inlineObjectWidthRaw = NSAttributedString.Key("hwp.inlineObjectWidthRaw")
     /// 그 저장값의 크기 기준 (NSNumber, `HwpCommonCtrlObjectWidthRelativeTo` rawValue)
@@ -102,7 +105,9 @@ enum HwpInlineObjectReservation {
     /// (종이·쪽·절대) 단 폭과 무관하다. 다만 delegate는 폭·높이를 함께 나르므로 마커가
     /// 이미 실어 둔 예약 높이(`inlineObjectHeight`)를 **그 마커에서** 다시 읽어 얹는다.
     /// 글자처럼 취급 표의 예약 높이는 단 폭의 함수라(#214) 호출부가 이 뒤에
-    /// `withReservedHeights`로 따로 다시 잡는다 (`HwpPaginator.placedFragment`).
+    /// `withReservedHeights`로 따로 다시 잡는다 (`HwpPaginator.placedFragment`). 표는 그때 폭도
+    /// 그 단에서 다시 조판한 바깥 폭으로 잡는다 — 여기서 푸는 기준 폭 100%는 칸이 1pt 하한에
+    /// 걸린 표가 실제로 그려지는 폭보다 좁다 (`HwpTableLayout.coveringWidth`, #254 PR 리뷰).
     static func rescaledForColumn(
         _ string: NSAttributedString,
         resolver: HwpObjectSizeResolver
@@ -169,20 +174,23 @@ enum HwpInlineObjectReservation {
         return ordinals
     }
 
-    /// 개체 마커의 예약 높이를 `outerHeights`(controlIndex → 바깥 상자 높이, pt)로 바꾼 사본
-    /// (#214) — 폭은 마커가 이미 예약한 값 그대로다. 예약이 없는 마커(예약 높이를 싣지 않은
-    /// 폭 0 마커)는 예약을 새로 만들지 않고, 값이 같은 마커는 건드리지 않는다. 바꿀 것이
-    /// 없으면 원본 그대로다 (사본을 뜨지 않는다).
+    /// 개체 마커의 예약 높이를 `outerHeights`(controlIndex → 바깥 상자 높이, pt)로, 예약 폭을
+    /// `outerWidths`(controlIndex → 바깥 상자 폭, pt)로 바꾼 사본 (#214) — 폭을 주지 않은 마커는
+    /// 이미 예약한 폭 그대로다. 예약이 없는 마커(예약 높이를 싣지 않은 폭 0 마커)는 예약을 새로
+    /// 만들지 않고, 값이 같은 마커는 건드리지 않는다. 바꿀 것이 없으면 원본 그대로다 (사본을
+    /// 뜨지 않는다).
     static func withReservedHeights(
         _ string: NSAttributedString,
-        outerHeights: [Int: CGFloat]
+        outerHeights: [Int: CGFloat],
+        outerWidths: [Int: CGFloat] = [:]
     ) -> NSAttributedString {
-        guard !outerHeights.isEmpty else { return string }
+        guard !outerHeights.isEmpty || !outerWidths.isEmpty else { return string }
         var updated: NSMutableAttributedString?
         forEachReservedMarker(in: string) { ordinal, location, reservedHeight in
-            guard let height = outerHeights[ordinal], height != reservedHeight,
-                  let width = reservedWidth(of: string, at: location)
-            else { return }
+            guard let reserved = reservedWidth(of: string, at: location) else { return }
+            let height = outerHeights[ordinal] ?? reservedHeight
+            let width = outerWidths[ordinal] ?? reserved
+            guard height != reservedHeight || width != reserved else { return }
             let target = updated ?? NSMutableAttributedString(attributedString: string)
             updated = target
             let range = NSRange(location: location, length: 1)

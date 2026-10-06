@@ -41,6 +41,32 @@ final class HwpxObjectPositionTests: XCTestCase {
             == unsigned.commonCtrlProperty.horizontalOffset
     }
 
+    /// `hp:sz`·`hp:pos` 요소가 통째로 없어도 속성만 빠졌을 때와 같은 기본값이다 — 크기 기준 절대값,
+    /// 가로 기준 단·세로 기준 문단, 왼쪽·위 (#254 리뷰). 모델 기본값 0(종이)으로 남으면 표가 종이 폭에
+    /// 맞춰지고(상대 기준 100%) 자리 차지 표가 종이 왼쪽에 놓인다. 한글 12.30도 같다 — 요소를 지운
+    /// 표를 칸 합 폭·단 왼쪽에 그리고 다시 저장할 때 ABSOLUTE·COLUMN·LEFT로 쓴다 (`probes/254`).
+    func testMissingSizeAndPositionElementsUseTheAttributeDefaults() throws {
+        let stripped = HwpxObjectFixture.tableXML
+            .replacingOccurrences(of: "<hp:sz [^>]*/>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "<hp:pos [^>]*/>", with: "", options: .regularExpression)
+        expect(stripped.contains("<hp:sz")) == false
+        expect(stripped.contains("<hp:pos")) == false
+        let info = try HwpxTableMapper.map(
+            HwpxObjectFixture.parse(stripped), context: HwpxObjectFixture.makeContext()
+        ).commonCtrlProperty.propertyInfo
+        expect(info.widthRelativeTo) == .absolute
+        expect(info.heightRelativeTo) == .absolute
+        expect(info.horizontalRelativeTo) == .column
+        expect(info.verticalRelativeTo) == .paragraph
+        expect(info.horizontalAlignment) == .topOrLeft
+        expect(info.verticalAlignment) == .topOrLeft
+        expect(info.treatAsChar) == false
+        // raw 비트필드도 같은 값을 주장한다
+        let decoded = try HwpCommonCtrlPropertyInfo.load(info.rawValue)
+        expect(decoded.widthRelativeTo) == .absolute
+        expect(decoded.horizontalRelativeTo) == .column
+    }
+
     func testObjectPropertyBitfieldIsSynchronizedWithTypedFields() throws {
         // typed 필드만 채우면 raw 두 자리가 0(종이 기준·어울림)으로 남아
         // 같은 모델이 서로 어긋나는 두 값을 동시에 주장한다.

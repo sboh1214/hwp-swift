@@ -305,6 +305,25 @@ public enum HwpDrawnTextLayout {
     /// 줄이 조각만으로는 허용 배율 안에 들 수 있어 여기서 접으면 측정은 2줄 ↔ 렌더는
     /// 1줄이 되고 조각 아래가 빈다. 측정(`layout`)도 같은 술어를 쓰므로 조각을 다시
     /// 재는 경로(비등폭 단 이월의 `HwpPaginator.fragmentAnchorLines`)와 렌더가 같이 간다.
+    ///
+    /// **글줄의 규칙이기도 하다** (#254) — 개체(글자처럼 취급 표·그림)의 예약 폭만으로 그 줄의
+    /// **가용 폭**(컨테이너 폭에서 첫 줄 들여쓰기·오른쪽 여백을 뺀 폭)을 넘는 줄은 글꼴 차이로 살짝
+    /// 넓어진 글줄이 아니라 한글에서도 넘치는 줄이다. 한글은 그런 개체를 정렬과 무관하게 줄 시작에
+    /// 두고 뒤 글자·뒤 개체를 다음 줄로 보내므로(한컴오피스 한글 12.30 실측 —
+    /// `HwpLineBreaker.overflowStartAligned`), 이 한 줄 허용으로 접거나 정렬 오프셋(가운데 반씩·
+    /// 오른쪽 음수)을 주지 않고 공유 줄바꿈 코어에 맡긴다. 컨테이너 폭이 아니라 가용 폭과 비교해야
+    /// 문단 폭 385pt의 400pt 표가 뒤 글자 유무에 따라 줄 시작(105.04)과 원점 0(85.04)으로 갈리지
+    /// 않는다 — 개체 폭은 한글과 같은 값이라 그 합이 넘치는 줄은 글꼴 허용의 대상이 아니다.
+    ///
+    /// 같은 이유로 **개체가 있는 줄은 글자 몫만 허용 배율로 잰다** (#254 PR 리뷰) — 글꼴 차로
+    /// 넓어지는 것은 글자뿐이므로, 글자 몫(자연 폭 − 개체 폭)이 개체가 남긴 폭(가용 폭 − 개체 폭)을
+    /// 허용 배율 이내로 넘을 때만 한 줄로 접는다. 줄 전체로 재면 가용 폭을 다 채운 표 뒤 짧은 글자가
+    /// 남은 폭 0에도 한 줄로 접혀 표 오른쪽 밖에 그려지고 측정은 한 줄 모자란다. 한컴오피스 한글
+    /// 12.30(build 6523) 실측(`probes/254/review` so254-suffix, 본문 425.2pt): 단 기준·문단 기준
+    /// 100% 표와 절대 425.2pt 표 뒤 '뒤', 420pt 표 뒤 '뒤뒤'는 모두 다음 줄에서 시작하고(왼쪽 정렬은
+    /// 85.08pt, 가운데 정렬 425.2pt 표 뒤 '뒤'는 다음 줄 가운데 292.8pt — 종전 우리: 상대 기준 두 표는
+    /// 510.24pt, 420pt 표는 505.04pt로 같은 줄), 415pt 표 뒤 '뒤'만 같은 줄 500.04pt에 남았다. 개체가
+    /// 없는 줄은 종전대로 줄 전체를 잰다.
     public static func slightOverflowLineMetrics(
         attributedString: NSAttributedString,
         lineWidth: CGFloat
@@ -325,10 +344,42 @@ public enum HwpDrawnTextLayout {
         let naturalWidth = CGFloat(
             CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
         )
-        guard naturalWidth > lineWidth,
-              naturalWidth <= lineWidth * HwpRenderTuning.Text.slightOverflowWidthRatio
-        else { return nil }
+        let ratio = HwpRenderTuning.Text.slightOverflowWidthRatio
+        guard naturalWidth > lineWidth, naturalWidth <= lineWidth * ratio else { return nil }
+        let objects = objectWidth(in: line)
+        if objects > 0 {
+            let available = availableFirstLineWidth(
+                containerWidth: lineWidth, attributedString: attributedString
+            )
+            guard objects <= available,
+                  naturalWidth - objects <= (available - objects) * ratio
+            else { return nil }
+        }
         return SlightOverflowLine(line: line, ascent: ascent, descent: descent, leading: leading)
+    }
+
+    /// 줄의 개체 마커 run(run delegate) 예약 폭 합 (`slightOverflowLineMetrics`).
+    private static func objectWidth(in line: CTLine) -> CGFloat {
+        guard let runs = CTLineGetGlyphRuns(line) as? [CTRun] else { return 0 }
+        return runs.reduce(CGFloat(0)) { total, run in
+            let attributes = CTRunGetAttributes(run) as NSDictionary
+            guard attributes[kCTRunDelegateAttributeName as String] != nil else { return total }
+            let range = CFRange(location: 0, length: 0)
+            return total + CGFloat(CTRunGetTypographicBounds(run, range, nil, nil, nil))
+        }
+    }
+
+    /// 한 줄 문단 첫 줄의 가용 폭 — 컨테이너 폭에서 첫 줄 들여쓰기(`firstLineHeadIndent`)와 오른쪽
+    /// 여백(CT `tailIndent` 규약: ≤ 0이면 오른쪽 끝에서, > 0이면 왼쪽 끝에서 잰 절대 위치)을 뺀다.
+    private static func availableFirstLineWidth(
+        containerWidth: CGFloat,
+        attributedString: NSAttributedString
+    ) -> CGFloat {
+        let style = HwpLineBreaker.paragraphStyle(in: attributedString, at: 0)
+        let head = HwpLineBreaker.paragraphCGFloat(.firstLineHeadIndent, in: style) ?? 0
+        let tail = HwpLineBreaker.paragraphCGFloat(.tailIndent, in: style) ?? 0
+        let trailingEdge = tail > 0 ? tail : containerWidth + tail
+        return trailingEdge - head
     }
 
     /// 문단 전체를 잰 줄에서 잘라낸 조각인지 (#166). 표식은 조각 문자열 전체에

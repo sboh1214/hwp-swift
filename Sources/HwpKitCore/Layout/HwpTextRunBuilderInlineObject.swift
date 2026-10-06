@@ -38,14 +38,24 @@ extension HwpTextRunBuilder {
         let stored = HwpObjectSizeResolver.size(of: commonProperty, resolver: sizeResolver)
         var width = stored.width
         var height = stored.height
-        if case .table = ctrls[controlIndex], let laidOut = inlineTableHeights[controlIndex] {
-            height = laidOut
+        var widthRaw = commonProperty.width
+        if case let .table(table) = ctrls[controlIndex] {
+            // 표의 폭은 레이아웃이 그릴 바깥 폭이다 — 칸 폭 합, 상대 기준이면 기준 폭 100%
+            // (#254, `HwpTableLayout.resolvedWidths`). 상대 기준은 다른 단으로 다시 풀 때도 100%로
+            // 풀리게 저장값을 고쳐 싣는다.
+            width = HwpTableLayout.reservedWidth(of: table, sizeResolver: sizeResolver) ?? 0
+            if let basis = commonProperty.propertyInfo.widthRelativeTo, basis != .absolute {
+                widthRaw = HwpTableLayout.fullBasisWidthRaw
+            }
+            if let laidOut = inlineTableHeights[controlIndex] {
+                height = laidOut
+            }
         }
         let margins = HwpObjectAnchorGeometry.OuterMargins(commonProperty)
         // 저작 폭이 0이라 개체 요소 detail로 폴백하면 그 폭은 절대값(HWPUNIT)이므로
         // 단 폭에 딸리지 않는다 — 예약 폭 열쇠도 그때는 싣지 않는다.
         var widthKeyAttributes = HwpInlineObjectReservation.widthKeyAttributes(
-            raw: commonProperty.width, basis: commonProperty.propertyInfo.widthRelativeTo,
+            raw: widthRaw, basis: commonProperty.propertyInfo.widthRelativeTo,
             horizontalMargin: margins.horizontal
         )
         if width <= 0 || height <= 0, let detail = components.first?.detail {

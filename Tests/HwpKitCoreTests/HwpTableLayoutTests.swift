@@ -199,9 +199,10 @@ import XCTest
             expect(second).to(beCloseTo(100, within: 1))
         }
 
-        func testColumnRelativeTableWidthResolvesAsPercent() {
+        func testColumnRelativeTableWidthFillsTheWholeColumn() {
             var authored = table()
-            // 크기 기준 '단'이면 저장 폭은 퍼센트다 — 5000 = 단 폭 400pt의 50%
+            // 크기 기준 '단'인 표는 저장값(5000 — 퍼센트로 읽으면 50%)과 무관하게 단 폭 400pt의
+            // 100%다 (#254 — 한글 12.30은 상대 기준 표를 늘 기준 폭에 맞춘다)
             authored.commonCtrlProperty.width = 5000
             authored.commonCtrlProperty.propertyInfo.widthRelativeTo = .column
             let result = layout().layout(
@@ -219,12 +220,12 @@ import XCTest
                 fail("expected table layout success")
                 return
             }
-            expect(frame.outerFrame.width).to(beCloseTo(200, within: 1))
+            expect(frame.outerFrame.width).to(beCloseTo(400, within: 1))
         }
 
-        func testFloatingTableKeepsAuthoredWidthBeyondColumn() {
+        func testTableKeepsAuthoredWidthBeyondColumn() {
             var authored = table()
-            // 종이 100% (10000) — 떠 있는 표는 단 폭 클램프를 받지 않는다 (#3)
+            // 종이 100% (10000) — 표는 단 폭으로 줄이지 않는다 (#3, #254)
             authored.commonCtrlProperty.width = 10000
             authored.commonCtrlProperty.propertyInfo.widthRelativeTo = .paper
             let result = layout().layout(
@@ -235,8 +236,7 @@ import XCTest
                     paperSize: CGSize(width: 595, height: 842),
                     contentSize: CGSize(width: 500, height: 700),
                     columnWidth: 400
-                ),
-                clampToAvailableWidth: false
+                )
             )
             guard case let .success(frame) = result else {
                 fail("expected table layout success")

@@ -51,8 +51,9 @@ import XCTest
     /// `HwpMemoPanelPainter`가 `CTTypesetterSuggestLineBreak`로 직접 쪼개는
     /// 세 번째 줄바꿈 구현을 타므로, 여기서 대조하면 의미가 없다.
     ///
-    /// **알고 있는 범위 한계 둘.** ① `sizeResolver`를 안 실어 글자처럼 취급 개체
-    /// 마커가 폭 0으로 예약된다 (프로덕션은 개체 크기). 등가는 두 경로가 **같은**
+    /// **알고 있는 범위 한계 둘.** ① `sizeResolver`를 안 실어 상대 기준 개체는 저장값을
+    /// 절대값(HWPUNIT)으로 풀어 예약한다 (표는 칸 폭 합을 예약한다 — 프로덕션은 기준 폭으로 푼
+    /// 크기). 등가는 두 경로가 **같은**
     /// 문자열을 보는 성질이라 이 축과 무관하지만, 인라인 개체 줄의 실제 줄바꿈
     /// 지점은 여기서 안 태워진다. ② 각주 자동 번호 등
     /// `controlReplacements`도 비어 있어 마커가 번호 텍스트로 치환되지 않는다.
@@ -128,7 +129,7 @@ import XCTest
             // 2026-09-25 9 / 1158 → 같은 날 9 / 1188 → 2026-09-26 9 / 1208 → 같은 날
             // 9 / 1266 → 2026-09-27 9 / 1282 → 같은 날 9 / 1324 → 2026-09-28 11 / 1362 →
             // 2026-09-30 11 / 1386 → 2026-10-01 11 / 1448 → 2026-10-02 11 / 1498 → 같은 날
-            // 11 / 1516 → 2026-10-03 12 / 1546).
+            // 11 / 1516 → 2026-10-03 12 / 1546 → 2026-10-05 12 / 1634 → 2026-10-06 10 / 1634).
             expect(stats.measured - stats.sharedCoreCompared)
                 .to(beLessThanOrEqualTo(Self.maximumFixtureSharedCoreSkips))
         }
@@ -218,12 +219,20 @@ import XCTest
         // 2026-10-03 `space-width`(#249, 구역·제목 1 + 빈칸 7문단 = 8문단)·`ms-word-space-width`(구역·제목
         // 1 + 빈칸 6문단 = 7문단, 둘 다 개체 없음) 추가로 문단 15·대조 30 증가(컨테이너는 그대로다) —
         // 공유 코어 대조 건너뜀이 1 늘었다 (`ms-word-space-width` `#2`: `ab cd 가나 ef #1`이 120pt에서
-        // 자연 폭 120.62pt인 slight-overflow 한 줄, 실측 12).
-        private static let expectedFixtureVisited = 994
-        private static let expectedFixtureMeasured = 1546
-        private static let expectedFixtureContainers = 373
+        // 자연 폭 120.62pt인 slight-overflow 한 줄, 실측 12), 2026-10-05 `wide-tables`(#254, 구역·제목 1 +
+        // 꼬리표·표본 39문단 = 40문단 + 표 17개의 셀 34문단 + 바깥 표 셀 2문단·중첩 표 셀 2문단 + 각주 2문단·
+        // 각주 표 셀 4문단 = 컨테이너 44) 추가로 문단 84·대조 88(셀의 빈 문단 40개는 두 폭 모두 대조 대상이
+        // 아니다)·컨테이너 44 증가 — 공유 코어 대조 건너뜀은 그대로다 (실측 12 — 개체 예약 폭만으로 줄의 가용
+        // 폭을 넘는 줄은 #254부터 slight-overflow가 아니다: `#23`의 400pt 표 + `뒤5`는 컨테이너 400pt에서
+        // 글자까지 더해야 넘치지만 개체가 문단 가용 폭 360pt(좌우 여백 20)를 넘어 공유 코어가 맡는다).
+        // 2026-10-06 #254 PR 리뷰로 개체가 있는 줄은 글자 몫만 허용 배율로 재게 되어 공유 코어 대조
+        // 건너뜀이 2 줄었다 (`table-cell-spacing` `#8`·`#18`: 110pt 표 뒤 꼬리표가 120pt에서 표가 남긴
+        // 폭에 들어가지 않아 공유 코어가 맡는다, 실측 10).
+        private static let expectedFixtureVisited = 1078
+        private static let expectedFixtureMeasured = 1634
+        private static let expectedFixtureContainers = 417
         private static let minimumFixtureMultiLine = 60
-        private static let maximumFixtureSharedCoreSkips = 12
+        private static let maximumFixtureSharedCoreSkips = 10
         private static let expectedLegacyVisited = 14659
 
         // MARK: - 본체

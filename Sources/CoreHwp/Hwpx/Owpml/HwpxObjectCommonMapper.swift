@@ -30,38 +30,45 @@ enum HwpxObjectCommonMapper {
         var property = HwpCommonCtrlProperty(commonCtrlId: ctrlId)
         var info = HwpCommonCtrlPropertyInfo()
 
-        if let size = node.paragraphFirstChild(named: "sz") {
-            property.width = size.uint32Attribute("width", default: 0)
-            property.height = size.uint32Attribute("height", default: 0)
-            info.widthRelativeTo = widthRelativeTos[size.attribute("widthRelTo") ?? "ABSOLUTE"]
-                ?? .absolute
-            info.widthRelativeToRawValue = info.widthRelativeTo?.rawValue ?? 4
-            info.heightRelativeTo = heightRelativeTos[
-                size.attribute("heightRelTo") ?? "ABSOLUTE"
-            ] ?? .absolute
-            info.heightRelativeToRawValue = info.heightRelativeTo?.rawValue ?? 2
-            info.protectSizeInParagraphVertRelTo = size.boolAttribute("protect")
-        }
+        // `hp:sz`·`hp:pos` 요소가 **통째로** 없을 때도 속성만 빠졌을 때와 같은 기본값(절대값 크기,
+        // 단·문단 기준, 왼쪽·위)을 세운다 — `HwpCommonCtrlPropertyInfo()`의 0(종이 기준)으로 남기면
+        // 크기·가로 기준이 '종이'로 읽혀 표가 종이 폭에 맞춰지고 종이 왼쪽에 놓인다 (#254 리뷰:
+        // 표 폭·자리 차지 표의 가로 자리가 그 기준을 따르게 된 뒤로 드러났다). 한글 저장본은 두
+        // 요소를 늘 쓰고, 요소가 없는 문서도 한글 12.30(build 6523)은 이렇게 읽는다 — `hp:sz`를 지운
+        // 450pt 표는 칸 합 450pt, `hp:pos`를 지운 문단 기준 가운데·오른쪽 정렬 표는 단 왼쪽에 그리고,
+        // 다시 저장하면 `widthRelTo="ABSOLUTE"`·`horzRelTo="COLUMN"`·`horzAlign="LEFT"`로 쓴다.
+        let size = node.paragraphFirstChild(named: "sz")
+        property.width = size?.uint32Attribute("width", default: 0) ?? 0
+        property.height = size?.uint32Attribute("height", default: 0) ?? 0
+        info.widthRelativeTo = widthRelativeTos[size?.attribute("widthRelTo") ?? "ABSOLUTE"]
+            ?? .absolute
+        info.widthRelativeToRawValue = info.widthRelativeTo?.rawValue ?? 4
+        info.heightRelativeTo = heightRelativeTos[
+            size?.attribute("heightRelTo") ?? "ABSOLUTE"
+        ] ?? .absolute
+        info.heightRelativeToRawValue = info.heightRelativeTo?.rawValue ?? 2
+        info.protectSizeInParagraphVertRelTo = size?.boolAttribute("protect") ?? false
 
-        if let position = node.paragraphFirstChild(named: "pos") {
-            info.treatAsChar = position.boolAttribute("treatAsChar")
-            info.affectsLineSpacing = position.boolAttribute("affectLSpacing")
-            info.allowOverlap = position.boolAttribute("allowOverlap")
-            info.restrictInPage = position.boolAttribute("flowWithText")
-            info.verticalRelativeTo = verticalRelativeTos[
-                position.attribute("vertRelTo") ?? "PARA"
-            ] ?? .paragraph
-            info.verticalRelativeToRawValue = info.verticalRelativeTo?.rawValue ?? 2
-            info.horizontalRelativeTo = horizontalRelativeTos[
-                position.attribute("horzRelTo") ?? "COLUMN"
-            ] ?? .column
-            info.horizontalRelativeToRawValue = info.horizontalRelativeTo?.rawValue ?? 2
-            info.verticalAlignment = alignments[position.attribute("vertAlign") ?? "TOP"]
-                ?? .topOrLeft
-            info.verticalAlignmentRawValue = info.verticalAlignment?.rawValue ?? 0
-            info.horizontalAlignment = alignments[position.attribute("horzAlign") ?? "LEFT"]
-                ?? .topOrLeft
-            info.horizontalAlignmentRawValue = info.horizontalAlignment?.rawValue ?? 0
+        let position = node.paragraphFirstChild(named: "pos")
+        info.treatAsChar = position?.boolAttribute("treatAsChar") ?? false
+        info.affectsLineSpacing = position?.boolAttribute("affectLSpacing") ?? false
+        info.allowOverlap = position?.boolAttribute("allowOverlap") ?? false
+        info.restrictInPage = position?.boolAttribute("flowWithText") ?? false
+        info.verticalRelativeTo = verticalRelativeTos[
+            position?.attribute("vertRelTo") ?? "PARA"
+        ] ?? .paragraph
+        info.verticalRelativeToRawValue = info.verticalRelativeTo?.rawValue ?? 2
+        info.horizontalRelativeTo = horizontalRelativeTos[
+            position?.attribute("horzRelTo") ?? "COLUMN"
+        ] ?? .column
+        info.horizontalRelativeToRawValue = info.horizontalRelativeTo?.rawValue ?? 2
+        info.verticalAlignment = alignments[position?.attribute("vertAlign") ?? "TOP"]
+            ?? .topOrLeft
+        info.verticalAlignmentRawValue = info.verticalAlignment?.rawValue ?? 0
+        info.horizontalAlignment = alignments[position?.attribute("horzAlign") ?? "LEFT"]
+            ?? .topOrLeft
+        info.horizontalAlignmentRawValue = info.horizontalAlignment?.rawValue ?? 0
+        if let position {
             property.verticalOffset = Self.offset(position, "vertOffset")
             property.horizontalOffset = Self.offset(position, "horzOffset")
         }

@@ -256,20 +256,17 @@ import XCTest
             expect(block.frame.height) > baseline + 0.5
         }
 
-        /// 비흐름 오버레이 각주 표는 **저작 폭을 지킨다** (R43 #1) — 흐름 경로
-        /// (`HwpPaginator`)와 같은 술어다. 한글은 각주 표를 자르지도 줄이지도
-        /// 않는다 (883쪽 실측). 883쪽 표가 안 걸린 건 우연이다: 글자처럼 취급이라
-        /// 클램프 대상인데 저작 폭이 문단 폭보다 작아 무동작이었다.
+        /// 비흐름 오버레이 각주 표는 **저작 폭을 지킨다** (R43 #1). 한글은 각주 표를 자르지도
+        /// 줄이지도 않는다 (883쪽 실측) — 흐름 표·글자처럼 취급 표도 마찬가지다 (#254, 아래
+        /// `testFlowFootnoteTableKeepsAuthoredWidthAndAlignsItsOuterBox` —
+        /// `HwpFootnoteWideTableTests.swift`).
         func testOverlayFootnoteTableKeepsAuthoredWidth() throws {
             var note = try cachedNote()
             let cell = [[try HwpSynthetic.textParagraph("좌")], [try HwpSynthetic.textParagraph("우")]]
-            var wide = HwpSynthetic.table(
+            // 표 폭은 칸 폭 합이다 (`HwpTableLayout.resolvedWidths`, #254)
+            let wide = HwpSynthetic.table(
                 cellWidth: 30000, rowHeights: [2000], cellParagraphs: [cell]
             )
-            // 저작 폭은 셀 폭이 아니라 컨트롤 속성에서 읽는다
-            // (`HwpTableLayout.resolvedOuterWidth`) — 0이면 availableWidth로 폴백해
-            // 클램프 여부와 무관하게 문단 폭이 나와 이 테스트가 무의미해진다.
-            wide.commonCtrlProperty.width = 60000
             note.ctrlHeaderArray = [.table(HwpSynthetic.placed(
                 wide, treatAsChar: false, textWrap: .inFrontOfText
             ))]
@@ -496,7 +493,7 @@ import XCTest
         /// 라인 캐시가 있는 빈 각주 문단 — 높이 하한 테스트의 기준선.
         /// 캐시 높이(16pt)에 줄 간격(6pt)이 더해진 값이 문단 높이가 되므로,
         /// 기대치를 상수로 박지 않고 `cachedNoteHeight()`로 뽑아 쓴다.
-        private func cachedNote() throws -> CoreHwp.HwpParagraph {
+        func cachedNote() throws -> CoreHwp.HwpParagraph {
             try HwpSynthetic.lineSegParagraph("", segments: [(location: 0, height: 1600)])
         }
 
@@ -512,7 +509,7 @@ import XCTest
         }
 
         /// 문단 하나짜리 각주를 배치해 첫 블록을 돌려준다.
-        private func firstBlock(
+        func firstBlock(
             of paragraph: CoreHwp.HwpParagraph,
             number: Int = 1
         ) throws -> HwpFootnoteBlock {

@@ -53,7 +53,7 @@ struct InlineTableFrameMemo {
 extension HwpTableLayout {
     /// 문단의 글자처럼 취급 표가 **컨테이너 줄 앵커에** 그려질 높이 (controlIndex → pt, #214) —
     /// 표를 그 자리에 그리는 컨테이너(각주·미주: `HwpParagraphObjectCollector.table`)가 문단을
-    /// 재기 전에 부른다. 수집기와 같은 입력(문단 폭·크기 해석기·클램프·셀 번호 경로)·같은
+    /// 재기 전에 부른다. 수집기와 같은 입력(문단 폭·크기 해석기·셀 번호 경로)·같은
     /// 높이(외곽 높이)라 줄 예약과 그림이 갈리지 않는다. 조판이 실패한 표는 싣지 않는다.
     func inlineTableHeights(
         in paragraph: CoreHwp.HwpParagraph,
@@ -72,7 +72,6 @@ extension HwpTableLayout {
                       availableWidth: availableWidth,
                       index: index,
                       sizeResolver: sizeResolver,
-                      clampToAvailableWidth: true,
                       numbering: numbering?.container(controlIndex: ordinal)
                   )
             else { continue }

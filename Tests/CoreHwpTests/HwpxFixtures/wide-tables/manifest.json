@@ -1,0 +1,90 @@
+{
+  "id": "wide-tables",
+  "generationTool": "한컴오피스 한글 12.30.0 (6523) macOS",
+  "source": "HWP fixture wide-tables와 같은 편집 세션에서 파일 > 다른 이름으로 저장하기 > 한글 표준 문서 (*.hwpx)로 저장 (System Events 접근성 자동화)",
+  "owpmlVersion": "5.1.1.0",
+  "sourceHwpFixture": "wide-tables",
+  "features": [
+    "hwpx",
+    "derived-from-hwp",
+    "table",
+    "paragraph-text",
+    "multi-paragraph",
+    "doc-info",
+    "doc-properties",
+    "preview-text",
+    "preview-image"
+  ],
+  "expectations": {
+    "binDataCount": 0,
+    "borderFillCount": 5,
+    "bulletCount": 0,
+    "charShapeCount": 9,
+    "faceNamesKorean": [
+      "함초롬돋움",
+      "함초롬바탕",
+      "Apple SD 산돌고딕 Neo"
+    ],
+    "numberingCount": 1,
+    "pageCount": 2,
+    "pageCountSource": "한글.app 12.30.0 실측 (2026-10-05, PDF로 저장하기 2쪽) = HwpKit 렌더 실측 (.testDeterministic) = HWP 쌍 쪽수",
+    "pageDef": {
+      "height": 84186,
+      "marginBottom": 4252,
+      "marginLeft": 8504,
+      "marginRight": 8504,
+      "marginTop": 5668,
+      "width": 59528
+    },
+    "paraShapeCount": 27,
+    "sectionCount": 1,
+    "sectionParagraphCounts": [
+      40
+    ],
+    "styleCount": 21,
+    "tabDefCount": 3,
+    "tableCellCounts": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      1
+    ],
+    "visibleTextContains": [
+      "#254 wide-tables",
+      "뒤0",
+      "뒤1",
+      "뒤2",
+      "뒤3",
+      "뒤4",
+      "뒤5",
+      "뒤6",
+      "뒤7",
+      "뒤8",
+      "앵커9",
+      "앵커10",
+      "앵커11",
+      "앵커12",
+      "앵커13",
+      "앵커14",
+      "앵커15",
+      "앵커16",
+      "본문17",
+      "본문18",
+      "#19"
+    ]
+  }
+}

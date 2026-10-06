@@ -42,8 +42,9 @@ import XCTest
             let columnTop = blocks[0].frame.minY
             let columnBottom = columnTop + 200.8
 
-            // 1단: 앞 문단 끝 + 위 여백에서 시작, 아래 여백까지 단에 들어가는 행만 담는다.
-            expect(first.frame.minX).to(beCloseTo(before.frame.minX, within: 0.01))
+            // 1단: 앞 문단 끝 + 위 여백에서 시작, 아래 여백까지 단에 들어가는 행만 담는다. 가로는
+            // 문단 기준 왼쪽 + 바깥 왼쪽 여백이다 (#254).
+            expect(first.frame.minX).to(beCloseTo(before.frame.minX + 2.83, within: 0.01))
             expect(first.frame.minY).to(beCloseTo(before.frame.maxY + 2.83, within: 0.01))
             expect(first.frame.maxY + 2.83).to(beLessThanOrEqualTo(columnBottom + 0.01))
             expect(first.frame.maxY + 30 + 2.83).to(beGreaterThan(columnBottom))
@@ -53,7 +54,7 @@ import XCTest
             expect(second.frame.minY).to(beCloseTo(columnTop + 2.83, within: 0.01))
             expect(second.frame.height).to(beCloseTo(CGFloat(second.rowCount) * 30, within: 0.01))
             // 글줄은 2단의 마지막 조각 아래 + 아래 여백, 뒤 문단은 그 아래.
-            expect(host.frame.minX).to(beCloseTo(second.frame.minX, within: 0.01))
+            expect(host.frame.minX).to(beCloseTo(second.frame.minX - 2.83, within: 0.01))
             expect(host.frame.minY).to(beCloseTo(second.frame.maxY + 2.83, within: 0.01))
             expect(after.frame.minY).to(beCloseTo(host.frame.maxY, within: 0.01))
         }

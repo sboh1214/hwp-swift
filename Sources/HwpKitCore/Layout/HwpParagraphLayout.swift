@@ -266,9 +266,11 @@ public struct HwpParagraphLayout {
             let totalHeight = paragraphMetrics.paragraphSpacingBefore
                 + lineHeight
                 + paragraphMetrics.paragraphSpacing
-            // 원점 x는 0 그대로다 — 렌더러의 정렬 오프셋을 여기 얹으면 단 폭과 같은
-            // 글자처럼 취급 표(noori 1쪽, 마커 폭이 단 폭을 0.4pt 넘는다)가 가운데 정렬
-            // 오프셋만큼 단 왼쪽 밖으로 밀린다 (한글은 단 왼쪽 끝). 조각 접기
+            // 원점 x는 0 그대로다. 이 분기는 글꼴 차로 살짝 넓어진 글줄의 것이다 — 개체 예약
+            // 폭만으로 가용 폭을 넘는 줄(noori 1쪽 제목 표처럼 마커가 단 폭을 0.4pt 넘는 줄)은
+            // #254부터 여기 오지 않고 공유 코어가 줄 시작에 둔다(`slightOverflowLineMetrics`).
+            // 렌더러의 정렬 오프셋(가운데 반씩·오른쪽 음수)과 갈리는 것은 살짝 넘치는 글줄에
+            // 든 좁은 개체의 앵커뿐이고 그 축의 한글 실측은 없다. 조각 접기
             // (`fragmentLineFramesAsDrawn`)만 렌더러 오프셋을 따른다.
             let metrics = HwpDrawnTextLayout.lineMetrics(of: overflow.line, in: attributedString)
             let lineFrame = HwpLineFrame(
