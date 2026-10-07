@@ -130,7 +130,7 @@ import XCTest
             // 9 / 1266 → 2026-09-27 9 / 1282 → 같은 날 9 / 1324 → 2026-09-28 11 / 1362 →
             // 2026-09-30 11 / 1386 → 2026-10-01 11 / 1448 → 2026-10-02 11 / 1498 → 같은 날
             // 11 / 1516 → 2026-10-03 12 / 1546 → 2026-10-05 12 / 1634 → 2026-10-06 10 / 1634 →
-            // 같은 날 10 / 1662).
+            // 같은 날 10 / 1662 → 2026-10-07 10 / 1676).
             expect(stats.measured - stats.sharedCoreCompared)
                 .to(beLessThanOrEqualTo(Self.maximumFixtureSharedCoreSkips))
         }
@@ -230,9 +230,11 @@ import XCTest
         // 건너뜀이 2 줄었다 (`table-cell-spacing` `#8`·`#18`: 110pt 표 뒤 꼬리표가 120pt에서 표가 남긴
         // 폭에 들어가지 않아 공유 코어가 맡는다, 실측 10), 같은 날 `note-reference-strikethrough`(#256, 첫
         // 문단이 구역 정의를 품은 참조 번호 취소선 7문단 + 각주 6문단·미주 1문단 = 컨테이너 7, 표 없음) 추가로
-        // 문단 14·대조 28·컨테이너 7 증가 (공유 코어 대조 건너뜀은 그대로다, 실측 10).
-        private static let expectedFixtureVisited = 1092
-        private static let expectedFixtureMeasured = 1662
+        // 문단 14·대조 28·컨테이너 7 증가 (공유 코어 대조 건너뜀은 그대로다, 실측 10), 2026-10-07
+        // `script-strikethrough-large`(#258, 구역 1 + 첨자 취소선 6문단 = 7문단, 개체 없음) 추가로 문단 7·
+        // 대조 14 증가(컨테이너·공유 코어 대조 건너뜀은 그대로다, 실측 10).
+        private static let expectedFixtureVisited = 1099
+        private static let expectedFixtureMeasured = 1676
         private static let expectedFixtureContainers = 424
         private static let minimumFixtureMultiLine = 60
         private static let maximumFixtureSharedCoreSkips = 10

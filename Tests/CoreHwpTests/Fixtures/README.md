@@ -193,7 +193,8 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   기준 run(검정) 사이에 빨강 대상 run으로 실은 합성 HWPX를 Hancom Office HWP for
   macOS 12.30.0 build 6446으로 열어 2026-09-15에 `.hwp`·`.hwpx`로 저장. 첨자 run의
   장식선이 어디에 그려지는지의 실물 근거다 (#179) — 한글은 취소선·글자 가운데 밑줄을
-  첨자로 옮겨진 베이스라인 + 줄어든 크기의 0.35배에, 글자 아래·위 밑줄은 원래
+  첨자로 옮겨진 베이스라인 + 보통 글자 취소선 높이의 89/140배(#258 — 이 문서의 10pt에서는 줄어든
+  크기의 0.35배와 0.015pt 차)에, 글자 아래·위 밑줄은 원래
   베이스라인에 축소 전 크기 기준으로 그리며 글자 위치 몫은 어느 선도 따라가지 않는다.
   같은 세션의 PDF 내보내기 좌표는 `HwpKitTests/FixtureDecorationLineRenderTests+Script`가
   핀한다. HWPX 쌍은 `HwpxFixtures/script-decorations`.
@@ -308,8 +309,8 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   Apple SD 20·40pt 실선 취소선, 글자 가운데 밑줄, 원형 점선 취소선, 기본 40pt·상대 크기 50%, 첨자
   run만 글자 위치 30% — 을 실은 합성 HWPX(줄 배치 정보 없음)를 Hancom Office HWP for macOS 12.30.0
   build 6523으로 2026-10-02에 열어 `.hwp`·`.hwpx`로 저장(1쪽). 한글이 이 문서의 **첨자 취소선을
-  첨자로 옮겨진 베이스라인 위, 보통 글자 취소선 높이의 0.696배에** 그리는 규칙(#248 — 한글 문서는
-  첨자 글리프 축소 비율 0.64배에 가깝다, 실측 0.636)의 실물 근거다 — Menlo 40pt 위 첨자 선이
+  첨자로 옮겨진 베이스라인 위, 보통 글자 취소선 높이의 0.696배에** 그리는 규칙(#248 — 한글 문서·한글
+  2007 호환 문서는 89/140배, #258)의 실물 근거다 — Menlo 40pt 위 첨자 선이
   0.64배 자리보다 0.45pt 위다. 같은 세션의 PDF 내보내기 좌표(README의 표)가 `HwpKitTests/FixtureDecorationLineRenderTests+MsWordScript`의
   오라클이고 두 글꼴이 결정론 resolver의 글꼴과 같아 쪽 좌표를 기기 무관하게 핀한다. HWPX 쌍은
   `HwpxFixtures/ms-word-script-strikethrough`.
@@ -353,6 +354,15 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   줄의 줄 상자와 비율 줄 간격 여분에 드는 규칙(#206)의 실물 근거다 — 한글이 저장한 줄 캐시
   (README의 표)가 오라클이고 `HwpKitTests/FixtureParagraphEndCharSizeTests`가 줄 캐시를 지운
   재조판을 그것과 대조한다. HWPX 쌍은 `HwpxFixtures/paragraph-end-char-size`.
+- `script-strikethrough-large`: **한글 문서**(호환 문서 대상 프로그램 `HWP201X`)에 한글 슬롯 Apple SD
+  산돌고딕 Neo·라틴 슬롯 Menlo로 보통·위 첨자·아래 첨자 취소선을 한 줄씩 나란히 둔 6문단 — Menlo
+  50·80·150·160pt와 Apple SD 100pt 실선 취소선, Menlo 100pt 글자 가운데 밑줄 — 을 실은 합성 HWPX(줄 배치
+  정보 없음)를 Hancom Office HWP for macOS 12.30.0 build 6523으로 2026-10-07에 열어 `.hwp`·`.hwpx`로
+  저장(1쪽). 한글이 이 문서의 **첨자 취소선을 첨자로 옮겨진 베이스라인 위, 보통 글자 취소선 높이의
+  89/140배에** 그리는 규칙(#258 — 첨자 글리프 축소 비율 0.64가 아니다)의 실물 근거다 — 0.64배였다면
+  첨자 선이 기본 크기의 0.0015배(50pt 0.075 … 160pt 0.24pt) 높다. 같은 세션의 PDF 내보내기 좌표(README의 표)가
+  `HwpKitTests/FixtureDecorationLineRenderTests+ScriptLarge`의 오라클이고 두 글꼴이 결정론 resolver의
+  글꼴과 같아 쪽 좌표를 기기 무관하게 핀한다. HWPX 쌍은 `HwpxFixtures/script-strikethrough-large`.
 - `space-width`: **한글 문서**(호환 문서 대상 프로그램 `HWP201X`)에 한글 슬롯 Apple SD 산돌고딕
   Neo·라틴 슬롯 Menlo 20pt로 빈칸(U+0020) 폭 표본 7문단 — 한글 50%·라틴 100%, 한글 100%·라틴 50%, 줄
   시작·연속 빈칸, 한글·라틴 장평 50%, 글꼴에 어울리는 빈칸 두 가지(앞 글자 슬롯·새 글자 모양 run),
