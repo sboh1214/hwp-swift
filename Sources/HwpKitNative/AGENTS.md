@@ -184,14 +184,15 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   (상자 바닥 = 개체 바깥 상자의 아랫변) 원점을 되돌리지 않는다 — 종전의
   `underlineReturnDrop` 원점 보정은 상자 바닥 몫을 두 번 세어 없앴다. 취소선(글자 가운데 밑줄
   포함)만 **run 단위**이고 첨자 이동(`hwp.scriptBaselineOffset`, 합산 키가 아니다)을 더해
-  기본 크기 × 첨자 축소 비율 × 0.35 위에, 두께는 첨자 축소 전 기본 크기의 장치 단위 획(#252)으로
+  기본 크기 × 0.35 위(첨자 run이면 그 높이의 89/140배 — `scriptStrikethroughScale`, #258; 첨자 글리프
+  축소 0.64와 따로)에, 두께는 첨자 축소 전 기본 크기의 장치 단위 획(#252)으로
   놓인다 — 각주·미주 참조 번호는 첨자가 아니다: 조판이 번호의 올림을 첨자 몫 키에 싣지 않고, 축소
   비율은 `strikethroughRunFontSize`가 `hwp.noteReferenceScale`로 무른다 (#256 — 한글은 번호의
   선을 번호가 놓인 글자 모양 자리·두께에 그린다) — MS 워드 호환 문서는
-  자리가 글꼴 상자 산식(아래 항목)이고 첨자 run이면 축소 비율이 아니라 보통 글자 높이의 0.696배다
+  자리가 글꼴 상자 산식(아래 항목)이고 첨자 run이면 한글 문서 갈래의 89/140배가 아니라 보통 글자 높이의 0.696배다
   (`msWordScriptStrikethroughScale`, #248); 밑줄은 첨자 이동을 무시한다. 변경 추적 표시선은 일반 선과 같다 (#187·#226 실측) — 삭제선은 취소선 경로
   그대로이고 삽입 밑줄(`drawTrackInsertUnderlineIfNeeded`)은 아래 밑줄과 같은 줄 기준에 색만
-  다르다 (첨자 표본은 없다). 갈래 판정과 산식 선택은 `HwpPageLayerDecorationLines.swift`,
+  다르다 (첨자 삭제선은 #258이 60–250pt로 실측해 첨자 취소선과 같은 자리다; 첨자 삽입 밑줄 표본은 없다). 갈래 판정과 산식 선택은 `HwpPageLayerDecorationLines.swift`,
   산식은 전부 `HwpDecorationLineGeometry`(HwpKitCore)가 낸다. 새 장식을 더할 때는 (1) 어느
   원점을 받는지 (2) 첨자 키를 더하는지 (3) 크기 기준이 run인지 줄인지, 기본 크기인지 run 글꼴
   크기인지를 실측으로 정할 것 — 비율은 `HwpDecorationLineGeometryTests`(+`+Script`·`+Compat`·
@@ -245,8 +246,9 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   모양 run으로 묶어 첫 run의 글꼴 → 취소선은 run 단위(속성 사전 비교는 양쪽 정렬 자간·
   문단 끝 상자에 갈린다)이고 그 글꼴 줄 상자의 베이스라인 높이 × 0.23이다 (#257 — 장식 기준 상자의
   `ascent` × 0.273이 아니다). 위·아래 첨자 run의 취소선은 첨자로 옮겨진 베이스라인 위 그 높이의
-  0.696배다 — 한글 문서 갈래의 0.64배(첨자 글리프 축소 비율)가 아니다 (#248, 한글 12.30 PDF 글꼴 10종 ×
-  8–100pt 360표본; `strikethroughLine`이 축소 비율 < 0.99인 run을 첨자로 본다 — 각주·미주 참조
+  0.696배다 — 한글 문서·한글 2007 호환 갈래의 89/140배(`scriptStrikethroughScale`, #258 — 첨자 글리프
+  축소 비율 0.64와도 다르다)가 아니다 (#248, 한글 12.30 PDF 글꼴 10종 × 8–100pt 360표본;
+  `strikethroughLine`이 세 갈래 모두 축소 비율 < 0.99인 run을 첨자로 본다 — 각주·미주 참조
   번호의 0.75배는 `strikethroughRunFontSize`가 미리 무르므로 들지 않는다, #256). 각주·미주 참조
   번호 run은 같은 글자 모양 id여도 따로 묶는다 — 한글은 번호의 취소선을 번호 자신의 글꼴로, 번호
   뒤 글자를 자기 첫 글리프 글꼴로 다시 시작한다 (#256, `noteReferenceRunIdentity`). 두 상자 모두 글꼴 상자(em)에 **글자 모양 기본 크기**
