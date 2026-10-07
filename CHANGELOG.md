@@ -16,7 +16,7 @@
   지표였고, 이제 문서의 호환 모드와 글꼴 지표에서 같은 값이 계산됩니다 — 아래 Fixed 항목.
   대신 MS 워드 호환 문서의 상수 `msWordLineHeightCellRatio`(1.3)·
   `msWordBaselineMarginCellRatio`(0.15)·`msWordUnderlineOffsetCellRatio`(0.021)·
-  `msWordStrikethroughAscentRatio`(0.273)가 생겼습니다.
+  `msWordStrikethroughBaselineRatio`(0.23, #257)가 생겼습니다.
 - `HwpDrawnTextLayout.underlineReturnDrop(of:)`와 `HwpRenderTuning.Text.baselineLiftRatio`를
   없앴습니다 (#226). 키 큰 '글자처럼 취급' 개체 줄에서 글자 아래 밑줄의 원점을 개체 높이의
   0.15배만큼 되돌리던 보정은 밑줄이 줄 상자 바닥에 붙는 규칙의 한 경우라 따로 둘 필요가
@@ -178,6 +178,23 @@
 
 ### Fixed
 
+- **MS Word 호환 문서에서 취소선이 글꼴에 따라 한컴오피스 한글보다 높거나 낮게 그려지던 문제를
+  바로잡았습니다** (#257). 취소선(글자 가운데 밑줄·변경 추적 삭제선 포함)의 높이를 아래 #187 항목에서
+  글꼴 장식 기준 상자의 `ascent` × 0.273으로 정했는데, 한글에 맞는 배율이 글꼴마다 0.267–0.282로 갈려
+  100pt에서 Palatino Linotype·Arial은 한글보다 0.65·0.50pt 높고 Trattatello·Palatino·Baskerville은
+  0.83·0.73·0.41pt 낮았으며, 아래로 긴 Zapfino는 7.9pt 낮았습니다. 한컴오피스 한글 12.30.0(macOS)이 내보낸
+  PDF를 글꼴 이름 62개(한글이 PDF에 실은 글꼴 59종) × 10–100pt 9단 558표본으로 재 보니, 한글은 취소선을
+  글꼴 줄 상자의 **베이스라인 높이**(줄 상자 윗변에서 베이스라인까지 — CJK 갈래 글꼴은 winAscent + 0.15 ×
+  (winAscent + winDescent), 그 밖의 글꼴은 winAscent + lineGap)의 0.23배에 그렸습니다 — 한글이 저장한 줄
+  배치 정보의 베이스라인에 0.23을 곱해 반올림한 자리가 558표본 모두 PDF와 같습니다. 이제 이 규칙
+  (`HwpRenderTuning.Text.msWordStrikethroughBaselineRatio`)으로 그리며, 같은 문서를 우리 렌더러로 내보낸
+  PDF에서 한글과 같은 글꼴로 그려진 495표본이 모두 한글과 0.12pt(600dpi 장치 단위 한 칸) 안입니다(종전
+  최대 7.87pt, 0.12pt를 넘는 표본 200여 개). 위·아래 첨자 취소선은 이 높이의 0.696배(#248)라 함께 맞아,
+  #248 실측의 글꼴 10종 × 8–100pt 스윕 540표본(보통·위 첨자·아래 첨자)과 선 모양·글자 가운데 밑줄·상대 크기를
+  섞은 변형 표본도 모두 0.12pt 안입니다(종전 최대 0.43pt). 선 두께, 글자 아래·위 밑줄, 한글 문서·한글 2007 호환 문서의
+  선은 바뀌지 않습니다. 회귀 핀은 글꼴 표 값으로 한글 PDF 실측을 대조하는 `HwpDecorationLineGeometryModelTests`,
+  시스템 글꼴을 렌더러 경로로 재는 `HwpDecorationLineGeometryTests`, `note-reference-strikethrough` 픽스처의
+  Apple SD 산돌고딕 Neo–Menlo 취소선 간격입니다.
 - **각주·미주 참조 번호에 걸린 취소선을 한컴오피스 한글처럼 본문 취소선과 같은 자리·두께로 그립니다**
   (#256). 0.18.0은 번호에 걸린 취소선을 번호의 작은 글꼴 크기로 그려 본문 선보다 낮고
   가늘었고(20pt 본문에서 기준선 위 4.69pt·두께 0.54pt — 한글은 본문 선과 같은 6.96pt·0.84pt), 첨자
@@ -190,8 +207,8 @@
   시작에서 새로 시작합니다. 이제 이 규칙대로 그립니다. 번호의 올림은 글리프만 옮기도록
   `hwp.glyphBaselineOffset`에만 싣고 첨자 몫 키 `hwp.scriptBaselineOffset`에는 싣지 않으며, 새 키
   `HwpAttributedStringKey.noteReferenceScale`이 번호의 축소 배율을 알립니다. 합성 문서 6종의 선 183개가
-  한글 PDF와 높이 0.10pt 안·두께 0 차로 같습니다(MS Word 호환 문서의 Apple SD 산돌고딕 Neo 글꼴 선만
-  보통 취소선 모형 차 #257로 0.13pt). 번호 글리프의 크기·자리와 서식 복사의 기준선은 바뀌지 않습니다.
+  한글 PDF와 높이 0.12pt(장치 단위 한 칸) 안·두께 0 차로 같습니다(위 #257 항목 전에는 MS Word 호환 문서의
+  Apple SD 산돌고딕 Neo 글꼴 선만 0.13pt 차였고, 지금은 그 선이 0.02pt·함초롬바탕 80pt 선이 0.12pt 차입니다). 번호 글리프의 크기·자리와 서식 복사의 기준선은 바뀌지 않습니다.
   회귀 핀은 `note-reference-strikethrough` 픽스처 쌍 HWP + HWPX입니다.
 - **본문·단·셀·각주보다 넓은 표를 줄이지 않고 한컴오피스 한글과 같은 자리에 그립니다** (#254). 0.18.0은
   글자처럼 취급 표와 흐름을 차지하는 표(자리 차지·어울림)를 놓이는 자리의 폭으로 줄이고 칸을 비례로 좁혀
@@ -614,8 +631,8 @@
   `ulUnicodeRange2`에 CJK 블록 비트(48–59·61 — 합성 글꼴 15종으로 비트 하나씩 확인)가 있는
   글꼴은 1.3배 상자(베이스라인 winAscent + 0.15 상자), 없는 글꼴은 winAscent + winDescent +
   lineGap 상자이고, 장식선은 그 상자를 1.3으로
-  나눈 기준 상자에서 아래 밑줄 −(descent + 0.021 cell)·위 밑줄 ascent + 0.021 cell, 취소선
-  0.273 × ascent이며(두께는 위 #252 항목의 장치 단위 획), 상자에 곱하는 크기는 run 글꼴 크기가
+  나눈 기준 상자에서 아래 밑줄 −(descent + 0.021 cell)·위 밑줄 ascent + 0.021 cell이고, 취소선은
+  글꼴 줄 상자의 베이스라인 높이 × 0.23이며(위 #257 항목, 두께는 위 #252 항목의 장치 단위 획), 상자에 곱하는 크기는 run 글꼴 크기가
   아니라 글자 모양 기본 크기입니다(슬롯 상대 크기를 50%로 줄여도 한글은 100%와 같은 자리에
   그립니다). 밑줄은 **줄 단위**(줄의 모든 run과
   문단 끝 글자의 상자를 축별 최댓값으로 합친 줄 상자 — 밑줄 없는 큰 글자 run이 같은 줄에
