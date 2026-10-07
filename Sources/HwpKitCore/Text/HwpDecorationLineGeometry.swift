@@ -4,7 +4,7 @@ import Foundation
 
 /// 글자 장식선(글자 아래·글자 위 밑줄, 취소선 = 글자 가운데 밑줄, 변경 추적 삽입 밑줄·
 /// 삭제선)의 **세로 위치와 두께** — 한글 문서·한글 2007 호환 문서·MS 워드 호환 문서의
-/// 세 기하를 한 곳에 모은다 (#136·#176·#179·#187·#210·#226). 렌더러
+/// 세 기하를 한 곳에 모은다 (#136·#176·#179·#187·#210·#226·#258). 렌더러
 /// (`HwpPageLayerDecorations`)가 이 값을 그대로 그린다.
 ///
 /// - 한글 문서: 아래 밑줄(삽입 밑줄 포함)은 **위 가장자리가 줄 상자 바닥**(베이스라인
@@ -23,7 +23,7 @@ import Foundation
 ///
 /// (L = 줄 상자 높이, T = 줄 글자의 기본 크기 최댓값 — 둘 다 줄 단위, `UnderlineReference`;
 /// em = run의 글자 모양 기본 크기, 첨자면 취소선 자리만 줄인다 — 한글 문서·한글 2007 호환
-/// 문서는 첨자 축소 비율을, MS 워드 호환 문서는 `msWordScriptStrikethroughScale`을 곱한다)
+/// 문서는 `scriptStrikethroughScale`을, MS 워드 호환 문서는 `msWordScriptStrikethroughScale`을 곱한다)
 ///
 /// **밑줄 세 종은 줄 단위, 취소선은 run 단위다** — 세 문서 갈래가 같다 (#187·#226). 한글
 /// 문서·한글 2007 호환 문서에서 밑줄 자리를 정하는 L은 줄 상자 높이(한글 줄 캐시의
@@ -44,8 +44,8 @@ import Foundation
 /// 크기는 전부 **글자 모양 기본 크기**(`hwp.baseFontSize`, 슬롯 상대 크기 전)다 — 기본 40pt·
 /// 상대 크기 50%인 run의 밑줄은 −6.84pt·1.56pt, 취소선은 +14.04pt (20pt 자리가 아니다,
 /// #226·#210). 첨자는 #179 규칙 그대로 — 밑줄은 원래 베이스라인·축소 전 기본 크기,
-/// 취소선은 첨자로 옮겨진 베이스라인 + 기본 크기 × 첨자 축소 비율이다 (MS 워드 호환 문서는
-/// 축소 비율 대신 0.696배, 맨 아래 문단).
+/// 취소선은 첨자로 옮겨진 베이스라인 + 기본 크기의 취소선 높이 × 89/140이다 (#258 — MS 워드
+/// 호환 문서는 0.696배, 맨 아래 문단).
 ///
 /// MS 워드 호환 문서의 `ascent`·`descent`·`cell`·베이스라인 높이는 글꼴의 win 지표에서 푼 상자
 /// (`HwpMsWordLineBox`)에 **글자 모양 기본 크기**를 곱한 pt다 — 슬롯 상대 크기는 곱하지
@@ -81,10 +81,11 @@ import Foundation
 ///
 /// 한글 문서의 값은 글꼴과 무관하고 (13개 글꼴 전부 같은 값) 첨자 규칙(#179)은 세 문서
 /// 갈래가 같은 틀이다 — 취소선 중심은 첨자로 옮겨진 베이스라인 위, 두께와 밑줄은 축소 전
-/// 크기 기준. 취소선의 높이만 갈래마다 다르다: 한글 문서·한글 2007 호환 문서(#210·#226에서
-/// 같은 규칙을 실측)는 줄어든 크기(축소 비율 0.64)의 0.35배이고(한글 실측은 보통 글자 취소선
-/// 높이의 0.636배라 큰 글자일수록 조금 낮다 — 80pt 0.11pt·100pt 0.14pt, #258), MS 워드 호환 문서는
-/// 같은 글꼴·기본 크기 보통 글자 취소선 높이의 0.696배다
+/// 크기 기준. 취소선의 높이만 갈래마다 다르다: 한글 문서·한글 2007 호환 문서는 보통 글자 취소선
+/// 높이(0.35em)의 89/140 ≈ 0.6357배 — 첨자 글리프 축소 비율 0.64가 아니다
+/// (`HwpRenderTuning.Text.scriptStrikethroughScale`, #258 — 한글 12.30 실측 두 갈래 × 8~250pt
+/// 1,324표본이 ⌊89 × 기본 크기(HWPUNIT) ÷ 400⌋; 0.64는 크기에 비례해 높아 100pt 0.15pt·250pt
+/// 0.375pt 어긋났다), MS 워드 호환 문서는 같은 글꼴·기본 크기 보통 글자 취소선 높이의 0.696배다
 /// (`HwpRenderTuning.Text.msWordScriptStrikethroughScale`, #248 — 한글 12.30 실측 글꼴 10종 ×
 /// 8~100pt × 위·아래 첨자 360표본).
 ///
@@ -176,7 +177,8 @@ public enum HwpDecorationLineGeometry {
         underlineAbove(lineBoxHeight: fontSize, thicknessFontSize: fontSize)
     }
 
-    /// 취소선 — 베이스라인 위 0.35 × `fontSize`(글자 모양 기본 크기, 첨자면 × 축소 비율),
+    /// 취소선 — 베이스라인 위 0.35 × `fontSize`(글자 모양 기본 크기, 첨자면 ×
+    /// `HwpRenderTuning.Text.scriptStrikethroughScale`, #258),
     /// 두께는 `thicknessFontSize`(첨자 축소 전 기본 크기)의 획 두께. 밑줄과 달리 run 단위다.
     public static func strikethrough(fontSize: CGFloat, thicknessFontSize: CGFloat) -> Line {
         Line(
@@ -213,7 +215,8 @@ public enum HwpDecorationLineGeometry {
     /// 취소선(글자 가운데 밑줄·변경 추적 삭제선 포함) — 중심은 한글 문서와 같은
     /// 0.35em이고 두께만 고정 0.36pt다. 밑줄과 달리 가장자리가 아니라 중심을 맞춘다
     /// (실측: 22개 크기에서 0.349~0.357em, 0.35em + 두께 절반은 18개 크기가 어긋난다).
-    /// `fontSize`는 첨자면 줄어든 크기다 — 취소선만 첨자로 옮겨진 베이스라인을 따른다.
+    /// `fontSize`는 첨자면 기본 크기 × `HwpRenderTuning.Text.scriptStrikethroughScale`(#258)이다 —
+    /// 취소선만 첨자로 옮겨진 베이스라인을 따른다.
     public static func hwp200XStrikethrough(fontSize: CGFloat) -> Line {
         Line(
             center: fontSize * HwpRenderTuning.Text.strikethroughCenterRatio,

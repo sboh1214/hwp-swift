@@ -26,13 +26,60 @@ final class HwpDecorationLineGeometryModelTests: XCTestCase {
         let above = HwpDecorationLineGeometry.underlineAbove(fontSize: 10)
         expect(above.center).to(beCloseTo(8.68, within: 0.0001))
         expect(above.thickness).to(beCloseTo(0.36, within: 0.0001))
-        // 취소선 중심은 (첨자로 줄어든) 글꼴 크기, 두께는 축소 전 크기 기준 — 줄어든 6.4pt로
-        // 재면 무늬 두께 25HWPUNIT → 2u(0.24pt)라 갈린다.
-        let script = HwpDecorationLineGeometry.strikethrough(fontSize: 6.4, thicknessFontSize: 10)
-        expect(script.center).to(beCloseTo(2.24, within: 0.0001))
+        // 첨자 취소선 중심은 기본 크기 × 89/140(#258)의 0.35배, 두께는 축소 전 크기 기준 — 줄어든
+        // 6.4pt로 재면 무늬 두께 25HWPUNIT → 2u(0.24pt)라 갈린다.
+        let script = HwpDecorationLineGeometry.strikethrough(
+            fontSize: 10 * HwpRenderTuning.Text.scriptStrikethroughScale, thicknessFontSize: 10
+        )
+        expect(script.center).to(beCloseTo(2.225, within: 0.0001))
         expect(script.thickness).to(beCloseTo(0.36, within: 0.0001))
         expect(HwpDecorationLineGeometry.strokeThickness(referenceSize: 6.4))
             .to(beCloseTo(0.24, within: 0.0001))
+    }
+
+    /// 한글 문서·한글 2007 호환 문서의 첨자 취소선은 첨자로 옮겨진 베이스라인 위, 보통 글자 취소선
+    /// 높이의 89/140배다 (#258) — 렌더러는 기본 크기 × `scriptStrikethroughScale`을 두 산식에 넘긴다.
+    /// 기대값은 한글 12.30.0 build 6523이 내보낸 PDF의 실측(2026-10-07, 함초롬바탕, 옮겨진 글리프
+    /// 베이스라인 → 선 중심, pt)이다. 글리프와 선이 저마다 장치 단위(0.12pt)로 떨어지므로 한 칸 안에서
+    /// 본다. 한글이 다시 저장한 줄 캐시로 푼 이산 규칙(⌊89 × 기본 크기 HWPUNIT ÷ 400⌋ HWPUNIT)과는
+    /// 버림 몫(0.01pt) 안이어야 한다. 첨자 글리프 축소 비율 0.64를 곱하면 기본 크기의 0.0015배 높아
+    /// 50pt부터 이 두 핀을 넘는다 (250pt 56.00 — 한글 55.56·55.68).
+    func testScriptStrikethroughIsAFixedFractionOfThePlainHeight() {
+        struct Sample {
+            let size: CGFloat
+            /// 한글 PDF 실측 — 위 첨자·아래 첨자
+            let superscript: CGFloat
+            let `subscript`: CGFloat
+        }
+        let samples = [
+            Sample(size: 50, superscript: 11.16, subscript: 11.04),
+            Sample(size: 72, superscript: 15.96, subscript: 15.96),
+            Sample(size: 100, superscript: 22.32, subscript: 22.20),
+            Sample(size: 120, superscript: 26.64, subscript: 26.64),
+            Sample(size: 150, superscript: 33.48, subscript: 33.48),
+            Sample(size: 200, superscript: 44.40, subscript: 44.52),
+            Sample(size: 250, superscript: 55.56, subscript: 55.68),
+        ]
+        for sample in samples {
+            let size = sample.size
+            let height = size * HwpRenderTuning.Text.scriptStrikethroughScale
+            let native = HwpDecorationLineGeometry.strikethrough(
+                fontSize: height, thicknessFontSize: size
+            )
+            let hwp200X = HwpDecorationLineGeometry.hwp200XStrikethrough(fontSize: height)
+            let rule = (89 * size * 100 / 400).rounded(.down) / 100
+            for (name, line) in [("한글 문서", native), ("한글 2007 호환", hwp200X)] {
+                let label = "\(name) \(size)pt"
+                expect(line.center).to(beCloseTo(rule, within: 0.01), description: "\(label) 규칙")
+                expect(line.center)
+                    .to(beCloseTo(sample.superscript, within: 0.12), description: "\(label) 위 첨자")
+                expect(line.center)
+                    .to(beCloseTo(sample.subscript, within: 0.12), description: "\(label) 아래 첨자")
+            }
+            expect(native.thickness).to(beCloseTo(
+                HwpDecorationLineGeometry.strokeThickness(referenceSize: size), within: 0.0001
+            ))
+        }
     }
 
     /// 한글 PDF가 찍은 줄 단위 밑줄 (#226) — 줄 상자 높이(L)·줄 글자 기본 크기(T)와 중심

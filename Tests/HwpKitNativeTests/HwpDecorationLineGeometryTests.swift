@@ -119,7 +119,7 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
 
     /// 첨자로 글꼴이 줄어도 '글자 위' 밑줄은 **줄기 전 크기**로 그린다 — 한글이
     /// 아래·위 밑줄과 선 두께를 기본 크기로 유지하기 때문이다 (2026-09-09·09-15
-    /// 실측, #179). 같은 run의 취소선은 반대로 줄어든 글꼴 크기를 따르므로, 두 선의
+    /// 실측, #179). 같은 run의 취소선은 반대로 첨자 높이(보통 높이의 89/140배, #258)를 따르므로, 두 선의
     /// 간격이 두 기준을 한꺼번에 고정한다. 이 run은 첨자 이동 키
     /// (`scriptBaselineOffset`)를 싣지 않아 취소선이 옮겨지지 않는다 — 첨자 이동을
     /// 실은 조합은 `+Script`가 잡는다.
@@ -149,11 +149,12 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
         )
         // 둘 다 베이스라인 **위**라 간격은 두 높이의 차다.
         let expected = HwpDecorationLineGeometry.underlineAbove(fontSize: preScript).center
-            - HwpRenderTuning.Text.strikethroughCenterRatio * shrunk
+            - HwpRenderTuning.Text.strikethroughCenterRatio * preScript
+            * HwpRenderTuning.Text.scriptStrikethroughScale
         expect(strike - above).to(beCloseTo(expected, within: 0.2))
         // 위 밑줄까지 줄어든 글꼴 크기로 그리면 8.68이 5.56으로 내려가 간격이
-        // 6.44 → 3.32로 좁아진다.
-        expect(expected).to(beCloseTo(6.44, within: 0.001))
+        // 6.455 → 3.335로 좁아진다.
+        expect(expected).to(beCloseTo(6.455, within: 0.001))
     }
 
     /// 밑줄 '글자 아래'는 **줄 단위**다 (#226) — 크기가 다른 두 run이 한 줄에 있으면 둘 다

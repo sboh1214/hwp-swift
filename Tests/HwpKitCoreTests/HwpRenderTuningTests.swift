@@ -13,6 +13,7 @@ final class HwpRenderTuningTests: XCTestCase {
         expect(HwpRenderTuning.Text.syntheticBoldStrokeWidth) == -3.5
         expect(HwpRenderTuning.Text.shadowOffsetScale) == 1.5
         expect(HwpRenderTuning.Text.strikethroughCenterRatio) == 0.35
+        expect(HwpRenderTuning.Text.scriptStrikethroughScale) == 89 / 140
         expect(HwpRenderTuning.Text.underlineAboveEdgeRatio) == 0.85
         expect(HwpRenderTuning.Text.underlineBelowEdgeRatio) == 0.15
         expect(HwpRenderTuning.Text.msWordLineHeightCellRatio) == 1.3

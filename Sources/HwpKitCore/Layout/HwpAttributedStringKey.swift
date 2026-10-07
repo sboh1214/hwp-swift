@@ -130,7 +130,8 @@ public enum HwpAttributedStringKey {
     /// 빈칸 폭(0.5em)의 기준이던 시절에서 왔다 — 빈칸 폭은 #249부터 run 슬롯(빈칸은 라틴)이
     /// 아니라 글자 모양의 **한글 슬롯**에서 잰다 (`HwpSpaceWidthMetrics`).
     /// 조판(`HwpTextRunBuilder.attributes(for:script:)`)이 **모든 run**에 싣는다 —
-    /// 취소선의 첨자 축소 비율(run 글꼴 크기 ÷ 이 값)과, 기본 크기 키가 없는 문자열의
+    /// 취소선의 첨자 판정(run 글꼴 크기 ÷ 이 값 < 0.99 — 선 높이는 그 비율이 아니라 갈래마다
+    /// 따로 둔 배율이다, #248·#258)과, 기본 크기 키가 없는 문자열의
     /// 장식선 크기 폴백으로 읽는다 (`HwpPageLayerDecorations.preScriptFontSize`; 한글 문서의
     /// 장식선 크기 자체는 #226부터 `baseFontSize`다 — 이 값은 슬롯 상대 크기를 반영해 기본
     /// 40pt·50% run의 선을 20pt 자리에 그렸다). 선 모양 축척도 기본 크기 키가 없는 문자열의
