@@ -9,7 +9,9 @@ public struct HwpControlMarkerReplacement: Sendable, Hashable {
     public let text: String
     /// 위 첨자 (본문 각주·미주 참조 번호, 각주 내용의 번호는 표 143 bit 12) — 글자 모양의
     /// 위 첨자와 다른 참조 번호 규칙(0.75배·설정 크기의 0.21배 위,
-    /// `HwpTextRunBuilder.noteReferenceScale`)으로 그린다.
+    /// `HwpTextRunBuilder.noteReferenceScale`)으로 그린다. 그 축소·올림은 글리프만 옮기고
+    /// 취소선·글자 가운데 밑줄은 번호가 놓인 글자 모양의 자리에 남는다
+    /// (`HwpAttributedStringKey.noteReferenceScale`, #256).
     public let isSuperscript: Bool
 
     public init(text: String, isSuperscript: Bool = false) {

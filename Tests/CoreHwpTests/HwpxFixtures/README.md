@@ -27,7 +27,8 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
    `dash-patterns`·`hwp2007-decorations`·`hyperlink-click-band`·`inline-object-baseline`·
    `inline-object-marker-size`·`inline-table-actual-height`·`mixed-size-decorations`·
    `ms-word-line-shapes`·`ms-word-paragraph-end-box`·`ms-word-script-strikethrough`·
-   `ms-word-space-width`·`page-end-line-box`·`paragraph-end-char-size`·`space-width`·
+   `ms-word-space-width`·`note-reference-strikethrough`·`page-end-line-box`·
+   `paragraph-end-char-size`·`space-width`·
    `table-border-chains`·`table-border-corners`·`table-cell-spacing`·`wide-tables`)은 `.hwp`와 `.hwpx`를
    **같은 편집 세션에서 연달아** 저장해야 두
    파일이 같은 문서가 된다. 한글 GUI로 만들기 어려운 조합은 합성 HWPX를 한글로 열어 두 형식으로
@@ -169,6 +170,14 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   규칙을 렌더 해시·골든이 잡지 못하던 자리의 실물 근거다. `hp:pos@horzRelTo`·`@horzAlign`·
   `@horzOffset`, `hp:outMargin`, `hp:sz@widthRelTo="PARA"`가 HWP 쌍과 같은 앵커·크기 기준으로
   옮겨지는 표본이기도 하다.
+  각주·미주 참조 번호에 걸린 장식선은 #256에서 `note-reference-strikethrough` 쌍으로 저작했다 — 주석을
+  가진 쌍(`footnote-endnote`·`inline-table-actual-height`·`page-end-line-box`·`hyperlink-click-band`·
+  `wide-tables`)에는 취소선·글자 가운데 밑줄이 걸린 글자 모양이 없어, 한글이 참조 번호(0.75배 글꼴·0.21em 올림)에 걸린
+  취소선·글자 가운데 밑줄을 번호가 놓인 글자 모양의 자리·두께에 그리고(위 첨자 글자 모양 안 번호는 그 첨자
+  선) 번호를 앞뒤 글자와 따로 된 run으로 그리는(긴 점선 무늬가 번호에서 다시 시작하고, MS 워드 호환
+  취소선 높이를 run마다 따로 잰다) 규칙을 렌더 해시·골든이 잡지 못하던 자리의 실물 근거다.
+  `hp:footNotePr`·`hp:autoNum`의 `hp:autoNumFormat@supscript`와 `hp:endNote`가 HWP 쌍과 같은 번호 모양·
+  주석 종류로 옮겨지는 표본이기도 하다.
 
 ## manifest 작성 기준
 

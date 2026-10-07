@@ -109,8 +109,10 @@ import XCTest
 
         /// 각주·미주 참조 번호(마커 치환 run)는 글자 모양 첨자와 **다른 규칙**이다 (#204, 한글
         /// 12.30 실측: 글꼴 0.75배·설정 크기의 0.21배 위) — 12pt 본문의 번호는 9pt 글꼴에
-        /// 2.52pt 위이고, 글자 위치 30(아래 3.6)과 합치면 글리프는 1.08pt 아래다. 첨자 몫 키는
-        /// 참조 번호에도 실려 장식선이 번호를 따라간다.
+        /// 2.52pt 위이고, 글자 위치 30(아래 3.6)과 합치면 글리프는 1.08pt 아래다. 그 올림은
+        /// **글리프만** 옮긴다 (#256): 첨자 몫 키에는 싣지 않고 축소 배율을
+        /// `noteReferenceScale`로 알린다 — 한글은 번호의 취소선을 본문 자리에 그린다. 종전에는
+        /// 첨자 몫 키에도 2.52를 실어 취소선이 번호를 따라 올라갔다.
         func testNoteReferenceUsesItsOwnScaleAndShift() throws {
             var paragraph = paragraph(text: "가", runs: [(0, 0)])
             paragraph.paraText?.charArray.append(CoreHwp.HwpChar(type: .extended, value: 17))
@@ -127,10 +129,15 @@ import XCTest
             expect(result.string) == "가1)"
             let attributes = result.attributes(at: 1, effectiveRange: nil)
 
-            let script = attributes[HwpAttributedStringKey.scriptBaselineOffset] as? NSNumber
             let glyph = attributes[HwpAttributedStringKey.glyphBaselineOffset] as? NSNumber
-            expect(script?.doubleValue).to(beCloseTo(2.52, within: 0.0001))
+            expect(attributes[HwpAttributedStringKey.scriptBaselineOffset]).to(beNil())
             expect(glyph?.doubleValue).to(beCloseTo(2.52 - 3.6, within: 0.0001))
+            let scale = attributes[HwpAttributedStringKey.noteReferenceScale] as? NSNumber
+            expect(scale?.doubleValue).to(beCloseTo(0.75, within: 0.0001))
+            // 본문 글자에는 번호 키가 없다 — 렌더러가 번호 run만 가려 낸다.
+            expect(result.attributes(at: 0, effectiveRange: nil)[
+                HwpAttributedStringKey.noteReferenceScale
+            ]).to(beNil())
             let fontValue = try XCTUnwrap(
                 attributes[kCTFontAttributeName as NSAttributedString.Key]
             )
@@ -145,6 +152,48 @@ import XCTest
             // 참조 번호는 첨자 축소 전 크기도 유지한다 — 장식선 두께·아래 밑줄 기준.
             let target = attributes[HwpAttributedStringKey.spaceTargetSize] as? NSNumber
             expect(target?.doubleValue).to(beCloseTo(12, within: 0.0001))
+        }
+
+        /// 위 첨자 글자 모양 안의 참조 번호 — 글리프는 두 축소·두 올림을 다 받지만(12pt × 0.64 ×
+        /// 0.75, 0.44 × 12 + 0.21 × 12), 첨자 몫 키는 **글자 모양 첨자 몫만**(0.44 × 12)이다 (#256).
+        /// 한글은 그 번호의 취소선을 둘러싼 위 첨자 글자의 선과 같은 자리에 그린다 (2026-10-06 실측:
+        /// 40pt 위 첨자 run 안 번호의 선 +26.52pt = 첨자 선). 그래서 번호 키(0.75)만 렌더러가 무르고
+        /// 남는 첨자 축소(0.64)·첨자 몫이 그 첨자 선 자리를 낸다.
+        func testNoteReferenceInsideSuperscriptKeepsOnlyTheCharShapeScriptShift() throws {
+            var paragraph = paragraph(text: "가", runs: [(0, 0)])
+            paragraph.paraText?.charArray.append(CoreHwp.HwpChar(type: .extended, value: 17))
+            paragraph.ctrlHeaderArray = [
+                .footnote(HwpSynthetic.listControl(ctrlId: .footnote, paragraphs: [])),
+            ]
+            let shape = try charShape(property: Self.superscriptBit | Self.strikethroughBit)
+            let result = builder(shapes: [0: shape]).build(
+                paragraph: paragraph,
+                controlReplacements: [
+                    0: HwpControlMarkerReplacement(text: "1)", isSuperscript: true),
+                ]
+            )
+            expect(result.string) == "가1)"
+            let body = result.attributes(at: 0, effectiveRange: nil)
+            let number = result.attributes(at: 1, effectiveRange: nil)
+
+            let bodyScript = body[HwpAttributedStringKey.scriptBaselineOffset] as? NSNumber
+            let numberScript = number[HwpAttributedStringKey.scriptBaselineOffset] as? NSNumber
+            expect(bodyScript?.doubleValue).to(beCloseTo(12 * 0.44, within: 0.0001))
+            expect(numberScript?.doubleValue).to(beCloseTo(12 * 0.44, within: 0.0001))
+            let glyph = number[HwpAttributedStringKey.glyphBaselineOffset] as? NSNumber
+            expect(glyph?.doubleValue).to(beCloseTo(12 * 0.44 + 12 * 0.21, within: 0.0001))
+            let scale = number[HwpAttributedStringKey.noteReferenceScale] as? NSNumber
+            expect(scale?.doubleValue).to(beCloseTo(0.75, within: 0.0001))
+            expect(number[HwpAttributedStringKey.strikethroughStyle]).toNot(beNil())
+            let fontValue = try XCTUnwrap(number[kCTFontAttributeName as NSAttributedString.Key])
+            let ref = fontValue as CFTypeRef
+            expect(CFGetTypeID(ref)) == CTFontGetTypeID()
+            let font = unsafeBitCast(ref, to: CTFont.self)
+            expect(CTFontGetSize(font)).to(beCloseTo(12 * 0.64 * 0.75, within: 0.0001))
+            // 렌더러가 번호 축소를 무르면 첨자 run과 같은 크기 비율(0.64)이 남는다.
+            let target = number[HwpAttributedStringKey.spaceTargetSize] as? NSNumber
+            expect(CTFontGetSize(font) / 0.75 / CGFloat(target?.doubleValue ?? 0))
+                .to(beCloseTo(0.64, within: 0.0001))
         }
 
         /// 상대 크기 50%의 위 첨자: 축소는 글꼴 크기(6pt)에, 올림은 설정 크기(12pt)에 건다 —

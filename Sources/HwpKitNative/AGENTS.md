@@ -185,7 +185,9 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   `underlineReturnDrop` 원점 보정은 상자 바닥 몫을 두 번 세어 없앴다. 취소선(글자 가운데 밑줄
   포함)만 **run 단위**이고 첨자 이동(`hwp.scriptBaselineOffset`, 합산 키가 아니다)을 더해
   기본 크기 × 첨자 축소 비율 × 0.35 위에, 두께는 첨자 축소 전 기본 크기의 장치 단위 획(#252)으로
-  놓인다 — MS 워드 호환 문서는
+  놓인다 — 각주·미주 참조 번호는 첨자가 아니다: 조판이 번호의 올림을 첨자 몫 키에 싣지 않고, 축소
+  비율은 `strikethroughRunFontSize`가 `hwp.noteReferenceScale`로 무른다 (#256 — 한글은 번호의
+  선을 번호가 놓인 글자 모양 자리·두께에 그린다) — MS 워드 호환 문서는
   자리가 글꼴 상자 산식(아래 항목)이고 첨자 run이면 축소 비율이 아니라 보통 글자 높이의 0.696배다
   (`msWordScriptStrikethroughScale`, #248); 밑줄은 첨자 이동을 무시한다. 변경 추적 표시선은 일반 선과 같다 (#187·#226 실측) — 삭제선은 취소선 경로
   그대로이고 삽입 밑줄(`drawTrackInsertUnderlineIfNeeded`)은 아래 밑줄과 같은 줄 기준에 색만
@@ -203,7 +205,8 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   실선은 종전대로 run마다 사각형). 한글이 그렇다 — 한 글자 모양 안의 한글↔라틴 슬롯 전환
   (CoreText가 run을 가르는 경계)은 패턴이 이어지고 색만 다른 이웃 글자 모양은 run 시작에서
   다시 시작한다 (2026-09-17 실측). 묶음 열쇠는 id에 더해 선을 정하는 키다
-  (`sameLineShapeGroup`: 모양·유무·색·축척 크기·`scriptBaselineOffset`; 축척 크기는 조판이 낸 run이면
+  (`sameLineShapeGroup`: 모양·유무·색·축척 크기·`scriptBaselineOffset`·각주·미주 참조 번호 신원
+  (`noteReferenceRunIdentity` — 한글은 번호 앞뒤에서 무늬를 다시 시작한다, #256); 축척 크기는 조판이 낸 run이면
   `baseFontSize`, 기본 크기 키가 없는 문자열만 `spaceTargetSize`다 — 세 문서 갈래 모두 슬롯마다
   상대 크기가 다른 한 글자 모양은 한 묶음이고, 한글도 그 경계에서 패턴 위상을 잇는다, #226·#227·#244
   실측) — 변경 추적
@@ -243,8 +246,9 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   문단 끝 상자에 갈린다). 위·아래 첨자 run의 취소선은 첨자로 옮겨진 베이스라인 위 그 높이의
   0.696배다 — 한글 문서 갈래의 0.64배(첨자 글리프 축소 비율)가 아니다 (#248, 한글 12.30 PDF 글꼴 10종 ×
   8–100pt 360표본; `strikethroughLine`이 축소 비율 < 0.99인 run을 첨자로 본다 — 각주·미주 참조
-  번호(0.75배)도 들지만 한글은 각주 번호의 취소선을 본문 자리에 그려 두 문서 갈래 모두 아직 한글과
-  다르다, #256). 두 상자 모두 글꼴 상자(em)에 **글자 모양 기본 크기**
+  번호의 0.75배는 `strikethroughRunFontSize`가 미리 무르므로 들지 않는다, #256). 각주·미주 참조
+  번호 run은 같은 글자 모양 id여도 따로 묶는다 — 한글은 번호의 취소선을 번호 자신의 글꼴로, 번호
+  뒤 글자를 자기 첫 글리프 글꼴로 다시 시작한다 (#256, `noteReferenceRunIdentity`). 두 상자 모두 글꼴 상자(em)에 **글자 모양 기본 크기**
   (`decorationBaseFontSize`: `hwp.baseFontSize`)를 곱한다 — run 글꼴 크기(슬롯 상대 크기 반영)로
   곱하면 한 글자 모양 안에서 선이 계단이 진다 (PR 리뷰, 한글 실측: 슬롯 50%도 100% 자리). 줄 상자 판정은 줄의 run 하나라도 MS 워드 키를 실으면 줄 전체
   (표식 run도 글꼴이 있으면 후보). 한글 문서(키 없음·`hwp201X`·`hunmin`)는

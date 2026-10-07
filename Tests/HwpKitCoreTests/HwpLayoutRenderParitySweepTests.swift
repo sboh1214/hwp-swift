@@ -129,7 +129,8 @@ import XCTest
             // 2026-09-25 9 / 1158 → 같은 날 9 / 1188 → 2026-09-26 9 / 1208 → 같은 날
             // 9 / 1266 → 2026-09-27 9 / 1282 → 같은 날 9 / 1324 → 2026-09-28 11 / 1362 →
             // 2026-09-30 11 / 1386 → 2026-10-01 11 / 1448 → 2026-10-02 11 / 1498 → 같은 날
-            // 11 / 1516 → 2026-10-03 12 / 1546 → 2026-10-05 12 / 1634 → 2026-10-06 10 / 1634).
+            // 11 / 1516 → 2026-10-03 12 / 1546 → 2026-10-05 12 / 1634 → 2026-10-06 10 / 1634 →
+            // 같은 날 10 / 1662).
             expect(stats.measured - stats.sharedCoreCompared)
                 .to(beLessThanOrEqualTo(Self.maximumFixtureSharedCoreSkips))
         }
@@ -227,10 +228,12 @@ import XCTest
         // 글자까지 더해야 넘치지만 개체가 문단 가용 폭 360pt(좌우 여백 20)를 넘어 공유 코어가 맡는다).
         // 2026-10-06 #254 PR 리뷰로 개체가 있는 줄은 글자 몫만 허용 배율로 재게 되어 공유 코어 대조
         // 건너뜀이 2 줄었다 (`table-cell-spacing` `#8`·`#18`: 110pt 표 뒤 꼬리표가 120pt에서 표가 남긴
-        // 폭에 들어가지 않아 공유 코어가 맡는다, 실측 10).
-        private static let expectedFixtureVisited = 1078
-        private static let expectedFixtureMeasured = 1634
-        private static let expectedFixtureContainers = 417
+        // 폭에 들어가지 않아 공유 코어가 맡는다, 실측 10), 같은 날 `note-reference-strikethrough`(#256, 첫
+        // 문단이 구역 정의를 품은 참조 번호 취소선 7문단 + 각주 6문단·미주 1문단 = 컨테이너 7, 표 없음) 추가로
+        // 문단 14·대조 28·컨테이너 7 증가 (공유 코어 대조 건너뜀은 그대로다, 실측 10).
+        private static let expectedFixtureVisited = 1092
+        private static let expectedFixtureMeasured = 1662
+        private static let expectedFixtureContainers = 424
         private static let minimumFixtureMultiLine = 60
         private static let maximumFixtureSharedCoreSkips = 10
         private static let expectedLegacyVisited = 14659
