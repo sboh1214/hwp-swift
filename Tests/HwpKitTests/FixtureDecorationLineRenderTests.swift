@@ -284,15 +284,15 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
 
     /// `track-changes` — 삭제선(베이스라인 위)과 삽입 밑줄(아래)이 둘 다 빨강
     /// 한 줄씩 있고, 이 문서(MS 워드 호환 문서, 대상 프로그램 2)에서는 **글꼴 지표**
-    /// 기하다 (#187): 삭제선은 run 글꼴 `ascent`의 0.273배 위, 삽입 밑줄은 줄의 기준
+    /// 기하다 (#187): 삭제선은 run 글꼴 줄 상자 베이스라인 높이의 0.23배 위(#257), 삽입 밑줄은 줄의 기준
     /// run(여기서는 같은 글꼴 10pt)의 `descent` + 0.021 cell 아래·두께는 글자 상자 높이
     /// (cell × 1.3)의 획 (#252).
     /// 두 선의 간격이 그 기하의 핀이고, 기대값은 결정론 resolver가 이 픽스처의
     /// 글꼴(함초롬돋움)에 준 실제 글꼴의 지표로 계산한다 — Menlo(win 0.9282/0.2358,
-    /// CJK 비트 있음)면 2.534 + 2.602 = 5.136pt, 한컴 글꼴 모드의 함초롬돋움(1.07/0.23)
-    /// 이면 2.921 + 2.573 = 5.494pt다. 한글 실물(PDF 내보내기, 함초롬돋움)은 글리프
+    /// CJK 비트 있음)면 2.536 + 2.603 = 5.139pt, 한컴 글꼴 모드의 함초롬돋움(1.07/0.23)
+    /// 이면 2.910 + 2.573 = 5.482pt다. 한글 실물(PDF 내보내기, 함초롬돋움)은 글리프
     /// 7.92pt(쪽 축소)에 삭제선 +2.28pt·삽입 밑줄 −2.04pt = 4.32pt → 10pt 기준 5.45pt로
-    /// 한컴 글꼴 모드 기대값과 0.05pt 안이다. 종전(#176)의 상수 0.29em + 0.26em = 5.5pt는
+    /// 한컴 글꼴 모드 기대값과 0.04pt 안이다. 종전(#176)의 상수 0.29em + 0.26em = 5.5pt는
     /// 이 실물에 맞춘 값이었고 지금은 글꼴 지표에서 같은 값이 나온다.
     func testTrackChangeMarksFollowTheMsWordFontMetrics() async throws {
         let raster = try await Self.raster("track-changes", hwpx: false)
@@ -326,7 +326,7 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
         expect(insert - strike).to(beCloseTo(expected, within: 0.2))
         // 결정론 resolver는 Menlo다 — 한글 실물(함초롬돋움 5.45pt)과 0.3pt 안이고, 종전
         // 상수(5.5pt)와도 가깝다. 글꼴이 바뀌면 이 값도 그 지표대로 옮겨진다.
-        expect(expected).to(beCloseTo(5.136, within: 0.01))
+        expect(expected).to(beCloseTo(5.139, within: 0.001))
         // 삽입 밑줄 두께 = 글자 상자 높이(Menlo 10pt 15.13pt)의 획 5u = 0.60pt (#252) — 커버리지
         // 합으로 잰다 (종전 0.05 cell = 0.582pt, 종전 상수 0.064em = 0.64pt, 한글 문서 10pt의
         // 0.36pt와 갈린다). 2.4px라 자기 열에서 완전 커버 값을 얻고, 왼쪽 여백의 세로 변경

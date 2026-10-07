@@ -243,7 +243,8 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   ② `msWordStrikethroughFonts(of:)`
   — 같은 글자 모양 id(`hwp.charShapeId`)의 잇닿은 run(슬롯·대체 글꼴 분할)을 한 글자
   모양 run으로 묶어 첫 run의 글꼴 → 취소선은 run 단위(속성 사전 비교는 양쪽 정렬 자간·
-  문단 끝 상자에 갈린다). 위·아래 첨자 run의 취소선은 첨자로 옮겨진 베이스라인 위 그 높이의
+  문단 끝 상자에 갈린다)이고 그 글꼴 줄 상자의 베이스라인 높이 × 0.23이다 (#257 — 장식 기준 상자의
+  `ascent` × 0.273이 아니다). 위·아래 첨자 run의 취소선은 첨자로 옮겨진 베이스라인 위 그 높이의
   0.696배다 — 한글 문서 갈래의 0.64배(첨자 글리프 축소 비율)가 아니다 (#248, 한글 12.30 PDF 글꼴 10종 ×
   8–100pt 360표본; `strikethroughLine`이 축소 비율 < 0.99인 run을 첨자로 본다 — 각주·미주 참조
   번호의 0.75배는 `strikethroughRunFontSize`가 미리 무르므로 들지 않는다, #256). 각주·미주 참조

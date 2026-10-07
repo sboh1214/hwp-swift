@@ -74,8 +74,8 @@ extension HwpDecorationLineGeometryTests {
     }
 
     /// Menlo 20pt 밑줄과 취소선의 간격이 글꼴 지표 산식과 같다 — 밑줄 −(0.2358 + 0.021 ×
-    /// 1.164) × 20 = −5.204pt, 취소선 0.273 × 0.9282 × 20 = 5.068pt → 간격 10.27pt (한글
-    /// 문서의 0.52em = 10.4pt와 다르다).
+    /// 1.164) × 20 = −5.204pt, 취소선은 줄 상자 베이스라인 높이의 0.23배 0.23 × 1.1028 × 20 =
+    /// 5.073pt(#257) → 간격 10.28pt (한글 문서의 0.52em = 10.4pt와 다르다).
     func testMsWordUnderlineAndStrikethroughFollowFontMetrics() throws {
         let size: CGFloat = 20
         let text = NSMutableAttributedString(
@@ -93,7 +93,7 @@ extension HwpDecorationLineGeometryTests {
             runBox: box, thicknessFontSize: size
         ).center - HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: box).center
         expect(underline - strike).to(beCloseTo(expected, within: 0.2))
-        expect(expected).to(beCloseTo(10.272, within: 0.01))
+        expect(expected).to(beCloseTo(10.279, within: 0.001))
     }
 
     /// 두께 — 밑줄은 줄 글자 상자 높이(cell × 1.3, Menlo 20pt 30.27pt)의 획 10u = 1.20pt, 취소선은
@@ -120,7 +120,7 @@ extension HwpDecorationLineGeometryTests {
     /// 10pt)의 밑줄이 40pt 상자의 자리·두께로 내려간다 (한글 실측: Apple SD 40pt 무장식
     /// run 뒤 함초롬 10pt 밑줄 run이 Apple SD 40pt 자리). 같은 run의 취소선은 run 단위라
     /// 10pt 상자 그대로이므로, 한 줄 안의 취소선–밑줄 간격이 두 규칙을 한꺼번에 잡는다:
-    /// 2.534 + 10.408 = 12.94pt (혼자면 2.534 + 2.602 = 5.14pt). 한글 문서에서는 run 크기
+    /// 2.536 + 10.411 = 12.95pt (혼자면 2.536 + 2.603 = 5.14pt). 한글 문서에서는 run 크기
     /// 비례라 이런 일이 없다.
     func testMsWordUnderlineFollowsTheTallestRunOnTheLine() throws {
         let plainBig = run("Menlo", size: 40, color: Self.magenta)
@@ -136,7 +136,7 @@ extension HwpDecorationLineGeometryTests {
             runBox: menloBox(10), thicknessFontSize: 10
         ).center - HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: menloBox(40)).center
         expect(underline - strike).to(beCloseTo(gap, within: 0.25))
-        expect(gap).to(beCloseTo(12.942, within: 0.01))
+        expect(gap).to(beCloseTo(12.948, within: 0.001))
 
         // 두께도 40pt 상자의 획(글자 상자 높이 60.53pt → 20u = 2.40pt)이다 — 빈칸 run으로 잰다.
         let blanks = NSMutableAttributedString(string: "    ", attributes: plainBig)
@@ -151,8 +151,8 @@ extension HwpDecorationLineGeometryTests {
     }
 
     /// 취소선은 run 단위다 — 같은 줄의 Menlo(CJK 갈래)·Helvetica(그 밖 갈래) 취소선 run이
-    /// 각각 자기 상자의 `ascent` × 0.273에 놓인다 (한글 실측: Apple SD + 함초롬 두 취소선
-    /// run이 각각 자기 자리).
+    /// 각각 자기 줄 상자의 베이스라인 높이 × 0.23에 놓인다 (#257; 한글 실측: Apple SD + 함초롬 두
+    /// 취소선 run, Times New Roman + Palatino 두 취소선 run이 각각 자기 자리).
     func testMsWordStrikethroughStaysPerRun() throws {
         let helvetica = CTFontCreateWithName("Helvetica" as CFString, 40, nil)
         try XCTSkipUnless(
@@ -176,9 +176,10 @@ extension HwpDecorationLineGeometryTests {
         ).center - HwpDecorationLineGeometry.msWordStrikethrough(
             runBox: helveticaBox, thicknessFontSize: size
         ).center
-        // 위 방향 = 위에서부터 잰 행이 작아진다. Menlo 0.9282 vs Helvetica 0.8146 → 1.24pt.
+        // 위 방향 = 위에서부터 잰 행이 작아진다. 베이스라인 높이 Menlo 1.1028 vs Helvetica
+        // 0.9502 → 0.23 × 0.1526 × 40 = 1.40pt.
         expect(helv - menlo).to(beCloseTo(expected, within: 0.2))
-        expect(expected).to(beCloseTo(1.240, within: 0.02))
+        expect(expected).to(beCloseTo(1.404, within: 0.001))
     }
 
     /// 취소선 run 묶기는 글자 모양 id(`charShapeId`)를 따른다 — 같은 id의 Menlo·Helvetica
@@ -221,7 +222,7 @@ extension HwpDecorationLineGeometryTests {
                 description: "id \(shapes.menlo)·\(shapes.helvetica)"
             )
         }
-        expect(apart).to(beCloseTo(1.240, within: 0.02))
+        expect(apart).to(beCloseTo(1.404, within: 0.001))
     }
 
     /// 상자에 곱하는 크기는 글자 모양 기본 크기다 (PR 리뷰 + 한글 실측: 슬롯 상대 크기

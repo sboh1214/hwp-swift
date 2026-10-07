@@ -18,7 +18,7 @@ final class HwpRenderTuningTests: XCTestCase {
         expect(HwpRenderTuning.Text.msWordLineHeightCellRatio) == 1.3
         expect(HwpRenderTuning.Text.msWordBaselineMarginCellRatio) == 0.15
         expect(HwpRenderTuning.Text.msWordUnderlineOffsetCellRatio) == 0.021
-        expect(HwpRenderTuning.Text.msWordStrikethroughAscentRatio) == 0.273
+        expect(HwpRenderTuning.Text.msWordStrikethroughBaselineRatio) == 0.23
         expect(HwpRenderTuning.Text.msWordScriptStrikethroughScale) == 0.696
         expect(HwpRenderTuning.Text.hwp200XDecorationLineThickness) == 0.36
         expect(HwpRenderTuning.Text.fixedSpaceEmRatio) == 0.5

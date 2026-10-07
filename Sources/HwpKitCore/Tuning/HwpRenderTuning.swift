@@ -194,16 +194,33 @@ public enum HwpRenderTuning {
         public static let msWordUnderlineOffsetCellRatio: CGFloat = 0.021
 
         /// MS 워드 호환 문서의 취소선(글자 가운데 밑줄·변경 추적 삭제선 포함) 중심의
-        /// 베이스라인 위 높이 = 기준 상자의 `ascent` × 글자 모양 기본 크기(슬롯 상대
-        /// 크기 무관, 첨자는 `msWordScriptStrikethroughScale`배) × 이 배율.
-        /// 실측: 같은 스윕 — 함초롬돋움 +0.2917em (÷ 1.07 = 0.2726), Apple SD 산돌고딕
-        /// Neo +0.2481 (÷ 0.90 = 0.2757), HY울릉도M +0.2330 (÷ 0.8584 = 0.2714), 맑은 고딕
-        /// +0.2973 (÷ 1.0884 = 0.2732), Menlo +0.2538 (÷ 0.9282 = 0.2734), Helvetica
-        /// +0.2197 (÷ 0.8146 = 0.2697), Times New Roman +0.2159 (÷ 0.8009 = 0.2696),
-        /// Courier New +0.1913 (÷ 0.7018 = 0.2726) — 0.267~0.278 (장치 양자화 ±0.003).
-        /// `track-changes` 실물의 삭제선 +0.29em (#136·#176) 은 함초롬돋움의 이 값이다.
-        /// 검증: `HwpDecorationLineGeometryTests+Compat` 위치 + `HwpRenderTuningTests`.
-        public static let msWordStrikethroughAscentRatio: CGFloat = 0.273
+        /// 베이스라인 위 높이 = 글꼴 줄 상자의 **베이스라인 높이**(`HwpMsWordLineBox.baseline` —
+        /// 줄 상자 윗변에서 베이스라인까지: CJK 글꼴은 winAscent + 0.15 × win 상자, 그 밖의
+        /// 글꼴은 winAscent + hhea lineGap) × 글자 모양 기본 크기(슬롯 상대 크기 무관, 첨자는
+        /// `msWordScriptStrikethroughScale`배) × 이 배율 (#257).
+        ///
+        /// 실측: 한글 12.30.0 build 6523 (2026-10-07) PDF 벡터 좌표 — `targetProgram="MS_WORD"`
+        /// 합성 문서에서 글꼴 이름 62개(한글이 PDF에 실은 글꼴 59종) × 10·16·20·27·36·40·55·72·100pt의
+        /// 실선 취소선 558표본이 이 배율과 전부 600dpi 장치 단위 한 칸(0.12pt) 안이다 (최대 0.115pt,
+        /// 평균 잔차 +0.002pt). 한글은 다시 저장한 줄 배치 캐시의 베이스라인(HWPUNIT)에 23/100을 곱해
+        /// HWPUNIT으로 반올림한 자리에 그린다 — 그 이산 규칙이 558표본 전부 PDF 장치 좌표와 같고,
+        /// 배율을 0.2299·0.2301로 바꾸면 22·19표본이 어긋난다 (글꼴마다 맞춘 연속 배율이 0.2290–0.2306으로
+        /// 흩어지는 것은 반올림 몫이다). 우리는 같은 상자를 글꼴 표에서 풀어 반올림 없이 곱한다.
+        /// 글꼴은 장식 상자 `descent`/`ascent`가 0.07(Cambria)부터 2.0(Zapfino)까지, hhea `lineGap`이
+        /// 0·0.04(Times New Roman)·0.08(Monaco)·0.22(Calibri)·0.33(Palatino Linotype)인 그 밖 갈래,
+        /// lineGap 0.148을 무시하는 CJK 갈래(HY울릉도M), OS/2가 없는 글꼴(AppleMyungjo·AppleGothic)을
+        /// 아우른다. 상대 크기 50·200%와 한 줄에 글꼴·크기가 섞인 run도 run마다 자기 첫 글리프 글꼴 ×
+        /// 기본 크기 자리다 (같은 실측의 혼합 문서).
+        ///
+        /// 종전(#187)의 장식 상자 `ascent`(베이스라인 − 0.15 cell) × 0.273은 글꼴마다 맞는 배율이
+        /// 0.267–0.282(Zapfino 0.334)로 갈려, 100pt에서 Palatino Linotype 0.65pt·Arial 0.50pt 높고
+        /// Trattatello 0.83pt·Palatino 0.73pt·Baskerville 0.41pt 낮았으며 `descent`가 큰 Zapfino는
+        /// 7.9pt 낮았다. `track-changes` 실물의 삭제선 +0.29em (#136·#176) 은 함초롬돋움의 이 값
+        /// (0.23 × 1.265)이다.
+        ///
+        /// 검증: `HwpDecorationLineGeometryTests+Compat`·`HwpDecorationLineGeometryModelTests` 위치 +
+        /// `HwpRenderTuningTests`.
+        public static let msWordStrikethroughBaselineRatio: CGFloat = 0.23
 
         /// MS 워드 호환 문서에서 위·아래 첨자 run의 취소선(글자 가운데 밑줄 포함)이 첨자로
         /// 옮겨진 베이스라인 위로 오르는 높이 ÷ 같은 글꼴·기본 크기의 보통 글자 취소선이 베이스라인

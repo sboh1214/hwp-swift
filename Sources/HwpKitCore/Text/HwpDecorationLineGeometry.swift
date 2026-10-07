@@ -18,7 +18,8 @@ import Foundation
 ///   선을 얹는다 — 중심은 −(0.15L + 0.18pt) · +(0.85L + 0.18pt)이고 취소선 중심은
 ///   한글 문서와 같은 +0.35em이다.
 /// - MS 워드 호환: 아래 밑줄 −(descent + 0.021 cell) · 위 밑줄 ascent + 0.021 cell, 두께는
-///   줄 글자 상자 높이(cell × 1.3)의 획 두께 · 취소선 0.273 ascent, 두께는 em의 획 두께.
+///   줄 글자 상자 높이(cell × 1.3)의 획 두께 · 취소선은 글꼴 줄 상자의 베이스라인 높이
+///   (줄 상자 윗변 → 베이스라인)의 0.23배, 두께는 em의 획 두께.
 ///
 /// (L = 줄 상자 높이, T = 줄 글자의 기본 크기 최댓값 — 둘 다 줄 단위, `UnderlineReference`;
 /// em = run의 글자 모양 기본 크기, 첨자면 취소선 자리만 줄인다 — 한글 문서·한글 2007 호환
@@ -46,7 +47,7 @@ import Foundation
 /// 취소선은 첨자로 옮겨진 베이스라인 + 기본 크기 × 첨자 축소 비율이다 (MS 워드 호환 문서는
 /// 축소 비율 대신 0.696배, 맨 아래 문단).
 ///
-/// MS 워드 호환 문서의 `ascent`·`descent`·`cell`은 글꼴의 win 지표에서 푼 상자
+/// MS 워드 호환 문서의 `ascent`·`descent`·`cell`·베이스라인 높이는 글꼴의 win 지표에서 푼 상자
 /// (`HwpMsWordLineBox`)에 **글자 모양 기본 크기**를 곱한 pt다 — 슬롯 상대 크기는 곱하지
 /// 않는다 (2026-09-16 실측: 한글 슬롯 50%·라틴 100%로 갈린 글자 모양의 밑줄·취소선이
 /// 100%와 같은 자리·두께, `HwpPageLayerDecorations.decorationBaseFontSize`). 한글은 그 문서에서
@@ -61,9 +62,10 @@ import Foundation
 ///   run이 함초롬 자리 −0.2583em·0.0661em, Apple SD 40pt 무장식 run 뒤의 함초롬 10pt
 ///   밑줄 run이 Apple SD 40pt 자리 −0.3273em·2.40pt, 같은 글꼴 10pt + 40pt 밑줄 run
 ///   둘은 40pt 자리 한 줄).
-/// - 취소선은 run마다 자기 글꼴 상자의 `ascent`다 (Apple SD + 함초롬 두 취소선 run이
-///   각각 +0.2492·+0.2913em, 맑은 고딕 무장식 run 뒤의 Courier New 취소선 run은 Courier의
-///   +0.1892em). 글자 모양 run이 슬롯으로 갈려도 첫 글리프의 글꼴 × 기본 크기 한 줄이다
+/// - 취소선은 run마다 자기 글꼴 상자의 베이스라인 높이(`HwpMsWordLineBox.baseline`)에서 잰다
+///   (Apple SD + 함초롬 두 취소선 run이 각각 +0.2492·+0.2913em, 맑은 고딕 무장식 run 뒤의
+///   Courier New 취소선 run은 Courier의 +0.1892em; #257: Times New Roman 40pt + Palatino 40pt
+///   두 run이 각각 +8.52·+13.08pt). 글자 모양 run이 슬롯으로 갈려도 첫 글리프의 글꼴 × 기본 크기 한 줄이다
 ///   (`가나Ag`에서 한글 50%·라틴 100%든 그 반대든 함초롬 × 40pt 자리 +11.64pt, `Ag가나`는
 ///   Helvetica × 40pt 자리 +8.76pt). 각주·미주 참조 번호는 같은 글자 모양이어도 **따로 된
 ///   글자 모양 run**이다 (#256 실측: 한글 함초롬바탕·라틴 Apple SD 40pt `가나L` + 각주 + `AB`의
@@ -240,13 +242,16 @@ public enum HwpDecorationLineGeometry {
         )
     }
 
-    /// 취소선 — run 자신의 상자(`runBox`, pt)의 `ascent` × 0.273, 두께는 한글 문서와
-    /// 같은 `thicknessFontSize`(글자 모양 기본 크기)의 획 두께.
+    /// 취소선 — run 자신의 글꼴 상자(`runBox`, pt)의 **베이스라인 높이**(`baseline` — 줄 상자
+    /// 윗변에서 베이스라인까지) × 0.23(`HwpRenderTuning.Text.msWordStrikethroughBaselineRatio`), 두께는
+    /// 한글 문서와 같은 `thicknessFontSize`(글자 모양 기본 크기)의 획 두께 (#257). 장식선 기준
+    /// 상자의 `ascent`(베이스라인 − 0.15 cell)가 아니다 — 그 0.273배(#187)는 `descent`가 큰
+    /// 글꼴일수록 한글보다 낮았다 (Baskerville 100pt 0.41pt, Zapfino 100pt 7.9pt).
     public static func msWordStrikethrough(
         runBox: HwpMsWordLineBox, thicknessFontSize: CGFloat
     ) -> Line {
         Line(
-            center: runBox.ascent * HwpRenderTuning.Text.msWordStrikethroughAscentRatio,
+            center: runBox.baseline * HwpRenderTuning.Text.msWordStrikethroughBaselineRatio,
             thickness: strokeThickness(referenceSize: thicknessFontSize)
         )
     }

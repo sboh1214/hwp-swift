@@ -37,9 +37,9 @@ import XCTest
 /// 베이스라인 678.00 위 5.16pt).
 ///
 /// 수정 전에는 번호 선이 번호를 따라 올라갔다 — 1번 113.53(한글 116.28), 2번 176.30(181.68), 4번 번호
-/// 304.07(312.48). Apple SD 자리(6번 `가나K`·7번 `가나`)는 우리 MS 워드 보통 선 모형(0.273 × `ascent`)이 Apple
-/// SD에서 한글보다 0.26pt 낮게 그리는 기존 격차(#257)를 품는다 — 그 차를 허용 오차(0.2)가 넘지 않도록
-/// 우리 쪽 베이스라인 차(−0.1pt)와 합쳐 0.16pt 안이다.
+/// 304.07(312.48). 2쪽의 네 선은 한글과 0.16pt 안이다 — 우리 베이스라인이 한글보다 약 0.1pt 높은 몫을
+/// 품는다 (6번 `가나K` 167.56·번호·`AB` 167.14, 7번 `AB`·번호 366.74·`가나` 367.16). #257 전에는 MS 워드
+/// 보통 선 모형(0.273 × `ascent`)이 Apple SD 자리를 한글보다 0.26pt 낮게 그려 그 몫과 상쇄돼 있었다.
 ///
 /// `extension`에 두는 이유는 `FixtureDecorationLineRenderTests` 본문이
 /// `type_body_length` 경고선에 닿아 있어서다.
@@ -153,8 +153,9 @@ extension FixtureDecorationLineRenderTests {
             ]
 
     /// 본문 선이 한글 쪽 좌표에 있고, 번호 선이 같은 줄 이웃 선과 같은 행이다. 두 포맷이 같은 행이다.
-    /// 오차 예산: 쪽 좌표 0.2 (`+MsWordScript`와 같다 — 한글 PDF 장치 좌표 0.12pt + Apple SD 자리의
-    /// #257 격차, 실측 최대 0.16), 같은 줄 관계 0.05 (같은 글자 모양의 선은 우리 렌더에서 같은 산식).
+    /// 오차 예산: 쪽 좌표 0.2 (`+MsWordScript`와 같다 — 한글 PDF 장치 좌표 0.12pt; 이 1쪽 선은 모두
+    /// Menlo이고 실측 최대 0.10pt, 2쪽은 `testNoteReferenceSplitsTheMsWordStrikethroughFont`), 같은 줄
+    /// 관계 0.05 (같은 글자 모양의 선은 우리 렌더에서 같은 산식).
     func testNoteReferenceStrikethroughsMatchHancomCoordinatesInBothFormats() async throws {
         var centers: [[CGFloat]] = []
         for hwpx in [false, true] {
@@ -206,10 +207,11 @@ extension FixtureDecorationLineRenderTests {
 
     /// MS 워드 호환 문서의 취소선 글꼴은 번호에서 끊긴다 (2쪽) — 6번 `가나K`(첫 글리프 Apple SD)의 선과
     /// 번호·`AB`(Menlo)의 선이 다른 행이고 번호 = `AB`, 7번 번호 = `AB`(Menlo)이고 번호 뒤 `가나`는 다시
-    /// Apple SD 행이다. 한글: Apple SD 자리가 Menlo 자리보다 0.36·0.48pt 낮다(우리 모형 0.61pt — #257
-    /// 격차). 수정 전에는 같은 글자 모양 id라 줄 전체가 첫 글리프 글꼴 하나여서 6번 `AB`가 `가나K`
-    /// 행(167.77)에, 7번 `가나`가 Menlo 행에 붙었다 — 6번 번호는 그 글꼴의 첨자 자리(올림 16.8 + 보통
-    /// 높이의 0.696배, 156.95)였다. 번호 신원만 없애면 6번 번호·`AB`가 `가나K` 행에 붙는다.
+    /// Apple SD 행이다. 한글: Apple SD 자리가 Menlo 자리보다 0.36·0.48pt 낮다 — 우리는 두 글꼴의 줄 상자
+    /// 베이스라인 높이 차 × 0.23 × 80pt = 0.42pt다 (#257; 종전 `ascent` × 0.273 모형은 0.62pt). 수정
+    /// 전에는 같은 글자 모양 id라 줄 전체가 첫 글리프 글꼴 하나여서 6번 `AB`가 `가나K` 행(167.77)에,
+    /// 7번 `가나`가 Menlo 행에 붙었다 — 6번 번호는 그 글꼴의 첨자 자리(올림 16.8 + 보통 높이의 0.696배,
+    /// 156.95)였다. 번호 신원만 없애면 6번 번호·`AB`가 `가나K` 행에 붙는다.
     func testNoteReferenceSplitsTheMsWordStrikethroughFont() async throws {
         for hwpx in [false, true] {
             let format = hwpx ? "HWPX" : "HWP"
@@ -236,12 +238,20 @@ extension FixtureDecorationLineRenderTests {
             expect(sixth[0] - sixth[1]).to(
                 beGreaterThan(0.3), description: "\(format) 6번: Apple SD 행이 Menlo 행보다 아래"
             )
+            // 행 간격 = 두 글꼴의 베이스라인 높이 차 × 0.23 × 80pt (#257: Menlo 1.1028 − Apple SD
+            // 1.08 → 0.42pt; 한글 0.36·0.48pt는 그 값이 장치 단위로 반올림된 두 표본, 종전 모형 0.62pt)
+            expect(sixth[0] - sixth[1]).to(
+                beCloseTo(0.42, within: 0.08), description: "\(format) 6번 행 간격"
+            )
             let seventh = try centers(
                 "7번", [(88 ... 178, 366.84), (185 ... 250, 366.84), (257 ... 389, 367.32)]
             )
             expect(seventh[1]).to(beCloseTo(seventh[0], within: 0.05), description: "\(format) 7번")
             expect(seventh[2] - seventh[1]).to(
                 beGreaterThan(0.3), description: "\(format) 7번: 번호 뒤 `가나`가 Apple SD 행"
+            )
+            expect(seventh[2] - seventh[1]).to(
+                beCloseTo(0.42, within: 0.08), description: "\(format) 7번 행 간격"
             )
         }
     }

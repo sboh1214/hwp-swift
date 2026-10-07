@@ -16,8 +16,8 @@ import XCTest
 ///
 /// 오라클은 한글.app 12.30.0 build 6523의 PDF 내보내기다 (2026-10-02, 글꼴 10종 × 8~100pt × 위·아래
 /// 첨자 360표본 — `HwpRenderTuning.Text.msWordScriptStrikethroughScale`의 doc-comment). 여기서는
-/// Menlo(win 0.9282/0.2358, CJK 비트 → 장식 상자 `ascent` 0.9282em)로 산식을 수치와 픽셀로 잰다 —
-/// 쪽 좌표의 실물 핀은 `ms-word-script-strikethrough` 픽스처 쌍
+/// Menlo(win 0.9282/0.2358, CJK 비트 → 줄 상자 베이스라인 높이 0.9282 + 0.15 × 1.1641 = 1.1028em)로
+/// 산식을 수치와 픽셀로 잰다 — 쪽 좌표의 실물 핀은 `ms-word-script-strikethrough` 픽스처 쌍
 /// (`FixtureDecorationLineRenderTests+MsWordScript`)이다.
 ///
 /// `extension`에 두는 이유는 `HwpDecorationLineGeometryTests` 본문이 `type_body_length`
@@ -63,16 +63,17 @@ extension HwpDecorationLineGeometryTests {
         CTFontCreateWithName("Menlo" as CFString, size, nil)
     }
 
-    /// 보통 글자 취소선 높이 F = 0.273 × `ascent` × 기본 크기 (Menlo 40pt 10.136pt)
+    /// 보통 글자 취소선 높이 F = 0.23 × 글꼴 줄 상자 베이스라인 높이 × 기본 크기 (#257 — Menlo
+    /// 40pt 0.23 × 1.1028 × 40 = 10.146pt)
     private var msWordPlainStrikeHeight: CGFloat {
-        HwpMsWordLineBox.metrics(of: menlo(Self.msWordScriptSize)).ascent
-            * HwpRenderTuning.Text.msWordStrikethroughAscentRatio * Self.msWordScriptSize
+        HwpMsWordLineBox.metrics(of: menlo(Self.msWordScriptSize)).baseline
+            * HwpRenderTuning.Text.msWordStrikethroughBaselineRatio * Self.msWordScriptSize
     }
 
-    /// 산식 자체 — MS 워드 호환 문서의 첨자 run은 보통 run 취소선 높이의 0.696배(7.055pt), 두께는
+    /// 산식 자체 — MS 워드 호환 문서의 첨자 run은 보통 run 취소선 높이의 0.696배(7.062pt), 두께는
     /// 기본 크기 40pt 몫의 획 13u = 1.56pt다 (#252). 한글 문서·한글 2007 호환 문서의 첨자 run은 종전대로 0.35 × 축소 크기
     /// (8.96pt)다 — 그 갈래는 첨자 배율로 글리프 축소 비율을 쓴다. 수정 전 MS 워드 갈래는 0.64배
-    /// (6.487pt)라 40pt에서 0.57pt 낮았다.
+    /// (6.493pt)라 40pt에서 0.57pt 낮았다.
     func testMsWordScriptStrikethroughHeightIsTheScaledPlainHeight() {
         let layer = HwpPageLayer()
         let size = Self.msWordScriptSize
@@ -81,7 +82,7 @@ extension HwpDecorationLineGeometryTests {
             msWordScriptRun(size: size, color: cyan), msWordFont: menlo(size), fontSize: size
         )
         expect(plain.center).to(beCloseTo(msWordPlainStrikeHeight, within: 0.000_1))
-        expect(plain.center).to(beCloseTo(10.136, within: 0.001))
+        expect(plain.center).to(beCloseTo(10.146, within: 0.001))
 
         let scriptSize = size * Self.glyphScriptScale
         let scripted = layer.strikethroughLine(
@@ -91,7 +92,7 @@ extension HwpDecorationLineGeometryTests {
         expect(scripted.center).to(beCloseTo(
             plain.center * HwpRenderTuning.Text.msWordScriptStrikethroughScale, within: 0.000_1
         ))
-        expect(scripted.center).to(beCloseTo(7.055, within: 0.001))
+        expect(scripted.center).to(beCloseTo(7.062, within: 0.001))
         expect(scripted.thickness).to(beCloseTo(1.56, within: 0.000_1))
 
         // 한글 문서·한글 2007 호환 문서 — 첨자 배율은 글리프 축소 비율 그대로
@@ -137,7 +138,7 @@ extension HwpDecorationLineGeometryTests {
     }
 
     /// 픽셀로 — Menlo 40pt 보통(청록)·위 첨자(자홍)·아래 첨자(초록) 취소선을 한 줄에 그리면, 위
-    /// 첨자 선은 보통 선보다 17.6 − (1 − 0.696) × 10.136 = 14.52pt 위, 아래 첨자 선은 4.8 + 3.08
+    /// 첨자 선은 보통 선보다 17.6 − (1 − 0.696) × 10.146 = 14.52pt 위, 아래 첨자 선은 4.8 + 3.08
     /// = 7.88pt 아래다 (수정 전 0.64배면 13.95·8.45pt — 0.57pt씩 갈린다). 위 첨자 선이 첨자 글리프가
     /// 옮겨진 만큼 함께 오르는지도 이 간격이 잡는다.
     func testMsWordScriptStrikethroughsSitAtTheScaledHeightInARaster() throws {
@@ -171,7 +172,46 @@ extension HwpDecorationLineGeometryTests {
         // 위 방향 = 위에서부터 잰 행이 작아진다.
         expect(plain - superscript).to(beCloseTo(0.44 * size - rest, within: 0.15))
         expect(`subscript` - plain).to(beCloseTo(0.12 * size + rest, within: 0.15))
-        expect(0.44 * size - rest).to(beCloseTo(14.519, within: 0.001))
-        expect(0.12 * size + rest).to(beCloseTo(7.881, within: 0.001))
+        expect(0.44 * size - rest).to(beCloseTo(14.516, within: 0.001))
+        expect(0.12 * size + rest).to(beCloseTo(7.884, within: 0.001))
+    }
+
+    /// 렌더러 경로 (#257) — `strikethroughLine`은 run의 취소선 글꼴(`msWordStrikethroughFonts`가 고른 첫
+    /// 글리프 글꼴)의 표에서 줄 상자를 읽어 **베이스라인 높이**(줄 상자 윗변 → 베이스라인)의 0.23배에
+    /// 선을 놓는다. 시스템 글꼴 40pt가 한글 12.30.0 PDF(2026-10-07)와 장치 단위 한 칸(0.12pt) 안이다 —
+    /// Zapfino 17.28·Palatino 13.08·Times New Roman 8.64pt. 종전 장식 상자 `ascent` × 0.273은 Zapfino
+    /// 14.13·Palatino 12.81pt였다 (`descent`가 클수록 낮다). 글꼴이 없는 기기는 그 글꼴을 건너뛴다.
+    func testMsWordStrikethroughReadsTheBaselineHeightOfTheRunFont() throws {
+        let layer = HwpPageLayer()
+        let size: CGFloat = 40
+        let cyan = CGColor(red: 0, green: 1, blue: 1, alpha: 1)
+        struct SystemFont {
+            let name: String
+            let postScript: String
+            /// 한글 PDF의 취소선 높이 (pt)
+            let hancom: CGFloat
+        }
+        let fonts = [
+            SystemFont(name: "Zapfino", postScript: "Zapfino", hancom: 17.28),
+            SystemFont(name: "Palatino", postScript: "Palatino-Roman", hancom: 13.08),
+            SystemFont(name: "Times New Roman", postScript: "TimesNewRomanPSMT", hancom: 8.64),
+        ]
+        var measured = 0
+        for sample in fonts {
+            let font = CTFontCreateWithName(sample.name as CFString, size, nil)
+            guard (CTFontCopyPostScriptName(font) as String) == sample.postScript else { continue }
+            measured += 1
+            let line = layer.strikethroughLine(
+                msWordScriptRun(size: size, color: cyan), msWordFont: font, fontSize: size
+            )
+            let box = HwpMsWordLineBox.metrics(of: font)
+            expect(line.center).to(
+                beCloseTo(0.23 * box.baseline * size, within: 0.000_1), description: sample.name
+            )
+            expect(line.center).to(
+                beCloseTo(sample.hancom, within: 0.12), description: "\(sample.name) 한글"
+            )
+        }
+        try XCTSkipIf(measured == 0, "Zapfino·Palatino·Times New Roman이 모두 없음")
     }
 }
