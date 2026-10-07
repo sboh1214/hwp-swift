@@ -165,8 +165,9 @@ final class HwpDecorationLineGeometryModelTests: XCTestCase {
     /// 함초롬돋움 40pt (win 1.07/0.23, CJK): 밑줄 −(0.23 + 0.021 × 1.3) × 40 = −10.29pt
     /// (한글 PDF −0.2576em), 두께는 줄 글자 상자 높이 1.3 × 1.3 × 40 = 67.6pt의 획 — 무늬 두께
     /// 264HWPUNIT → 22u = 2.64pt (#252, 한글 0.0663em = 2.65pt); 위 밑줄 +(1.07 + 0.0273) × 40 =
-    /// 43.89pt (한글 +1.0985em); 취소선 0.273 × 1.07 × 40 = 11.68pt (한글 +0.2917em), 두께는
-    /// 기본 크기 40pt의 획 13u = 1.56pt.
+    /// 43.89pt (한글 +1.0985em); 취소선은 줄 상자 베이스라인 높이(1.07 + 0.15 × 1.3 = 1.265em)의
+    /// 0.23배 × 40 = 11.64pt (#257 — 한글 +0.2917em·#257 실측 11.64pt), 두께는 기본 크기 40pt의
+    /// 획 13u = 1.56pt.
     func testMsWordLinesFollowTheLineBox() {
         let box = HwpMsWordLineBox(winAscent: 1.07, winDescent: 0.23, lineGap: 0, isCJK: true)
             .scaled(by: 40)
@@ -179,12 +180,13 @@ final class HwpDecorationLineGeometryModelTests: XCTestCase {
         let strike = HwpDecorationLineGeometry.msWordStrikethrough(
             runBox: box, thicknessFontSize: 40
         )
-        expect(strike.center).to(beCloseTo(11.684, within: 0.001))
+        expect(strike.center).to(beCloseTo(11.638, within: 0.001))
         expect(strike.thickness).to(beCloseTo(1.56, within: 0.0001))
     }
 
-    /// Helvetica 80pt (그 밖 갈래, 기준 상자 0.8146/0.0895·cell 0.9041): 한글 PDF
-    /// −0.1080em·+0.8333em·+0.2197em. 두께는 줄 글자 상자 높이 1.1753 × 80 = 94.02pt의 획 —
+    /// Helvetica 80pt (그 밖 갈래, 기준 상자 0.8146/0.0895·cell 0.9041, 베이스라인 높이 0.9502):
+    /// 한글 PDF −0.1080em·+0.8333em·+0.2197em (취소선은 0.23 × 0.9502 = 0.2185em, #257 — 같은 글꼴
+    /// 20~100pt 스윕의 한글 비율도 0.2185). 두께는 줄 글자 상자 높이 1.1753 × 80 = 94.02pt의 획 —
     /// 무늬 두께 367HWPUNIT → 31u = 3.72pt (0.0465em, #252: 한글 12.30 build 6523 100% 쪽에서
     /// 아래·위 밑줄 3.72pt, 줄 캐시 `vertsize` 9407; 종전 0.0455em은 변경 추적 문서의 0.8배
     /// 축소 쪽에서 잰 값이라 축소한 크기로 다시 반올림된 획이었다), 취소선은 기본 크기 80pt의
@@ -202,8 +204,68 @@ final class HwpDecorationLineGeometryModelTests: XCTestCase {
         let strike = HwpDecorationLineGeometry.msWordStrikethrough(
             runBox: box, thicknessFontSize: 80
         )
-        expect(strike.center / 80).to(beCloseTo(0.2224, within: 0.003))
+        expect(strike.center / 80).to(beCloseTo(0.2185, within: 0.0005))
         expect(strike.thickness).to(beCloseTo(3.12, within: 0.0001))
+    }
+
+    /// MS 워드 호환 문서의 취소선은 글꼴 줄 상자의 **베이스라인 높이**(줄 상자 윗변 → 베이스라인)의
+    /// 0.23배다 (#257). 기대값은 한글 12.30.0 build 6523이 내보낸 PDF의 실측(2026-10-07, 베이스라인 →
+    /// 취소선 중심, pt)이고, 상자는 그 PDF에 실린 글꼴의 표 값(OS/2 win 지표·hhea lineGap, OS/2가 없는
+    /// AppleMyungjo는 hhea)으로 푼다. 장치 단위 한 칸(0.12pt) 안이어야 한다 — 558표본 최대 0.115pt.
+    /// 종전 `ascent`(베이스라인 − 0.15 cell) × 0.273은 `descent`·`lineGap`이 큰 글꼴에서 갈렸다:
+    /// Zapfino 100pt 35.33pt(한글 43.20), Palatino 32.03(32.76), Palatino Linotype 32.45(31.80).
+    func testMsWordStrikethroughFollowsTheFontLineBoxBaseline() {
+        struct Sample {
+            let font: String
+            let winAscent: CGFloat
+            let winDescent: CGFloat
+            let lineGap: CGFloat
+            let unitsPerEm: CGFloat
+            let isCJK: Bool
+            /// (기본 크기, 한글 PDF 취소선 높이)
+            let hancom: [(size: CGFloat, height: CGFloat)]
+        }
+        let samples = [
+            // `descent`가 `ascent`의 두 배 — 종전 모형이 가장 크게 갈린 글꼴
+            Sample(font: "Zapfino", winAscent: 750, winDescent: 1264, lineGap: 0, unitsPerEm: 400,
+                   isCJK: false, hancom: [(40, 17.28), (100, 43.20)]),
+            // CJK 갈래(비트 59·61)이면서 `descent`가 큰 글꼴
+            Sample(font: "Palatino", winAscent: 2403, winDescent: 989, lineGap: 0, unitsPerEm: 2048,
+                   isCJK: true, hancom: [(40, 13.08), (100, 32.76)]),
+            // 그 밖 갈래의 큰 lineGap(0.33em) — 베이스라인 높이에 든다
+            Sample(font: "Palatino Linotype", winAscent: 2150, winDescent: 613, lineGap: 682,
+                   unitsPerEm: 2048, isCJK: false, hancom: [(40, 12.72), (100, 31.80)]),
+            Sample(font: "Times New Roman", winAscent: 1825, winDescent: 443, lineGap: 87,
+                   unitsPerEm: 2048, isCJK: false, hancom: [(40, 8.64), (100, 21.48)]),
+            Sample(font: "Arial", winAscent: 1854, winDescent: 434, lineGap: 67, unitsPerEm: 2048,
+                   isCJK: false, hancom: [(40, 8.64), (100, 21.48)]),
+            Sample(font: "Baskerville", winAscent: 1968, winDescent: 705, lineGap: 0,
+                   unitsPerEm: 2048, isCJK: true, hancom: [(40, 10.68), (100, 26.64)]),
+            Sample(font: "Apple SD 산돌고딕 Neo", winAscent: 900, winDescent: 300, lineGap: 0,
+                   unitsPerEm: 1000, isCJK: true, hancom: [(40, 9.96), (100, 24.84)]),
+            // OS/2 없음 — hhea ascent·descent가 win 자리
+            Sample(font: "AppleMyungjo", winAscent: 891, winDescent: 326, lineGap: 0,
+                   unitsPerEm: 1025, isCJK: false, hancom: [(40, 8.04), (100, 20.04)]),
+        ]
+        for sample in samples {
+            let emBox = HwpMsWordLineBox(
+                winAscent: sample.winAscent / sample.unitsPerEm,
+                winDescent: sample.winDescent / sample.unitsPerEm,
+                lineGap: sample.lineGap / sample.unitsPerEm, isCJK: sample.isCJK
+            )
+            for (size, height) in sample.hancom {
+                let strike = HwpDecorationLineGeometry.msWordStrikethrough(
+                    runBox: emBox.scaled(by: size), thicknessFontSize: size
+                )
+                expect(strike.center).to(
+                    beCloseTo(emBox.baseline * 0.23 * size, within: 1e-9),
+                    description: "\(sample.font) \(size)pt 산식"
+                )
+                expect(strike.center).to(
+                    beCloseTo(height, within: 0.12), description: "\(sample.font) \(size)pt 한글"
+                )
+            }
+        }
     }
 
     /// 줄 상자를 합치면 밑줄은 합친 상자를 따른다 — Apple SD 10pt 글자 줄에 Menlo 10pt

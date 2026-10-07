@@ -19,7 +19,7 @@ import Foundation
 ///
 /// (win 상자 = winAscent + winDescent)
 ///
-/// 장식선은 두 갈래 모두 **줄 상자에서 거꾸로 푼 상자**를 쓴다 — 글꼴 하나의 상자와 그
+/// 밑줄은 두 갈래 모두 **줄 상자에서 거꾸로 푼 상자**를 쓴다 — 글꼴 하나의 상자와 그
 /// 합(`init(lineHeight:baseline:)`·`union`)에서는 `cellHeight` = `lineHeight` / 1.3,
 /// `ascent` = `baseline` − 0.15 × `cellHeight`, `descent` = `cellHeight` − `ascent` (줄 상자
 /// 가장자리에서 0.15 cell씩 안쪽; 줄 끝 글자·개체가 키운 줄 상자는 아래 문단). CJK
@@ -28,7 +28,9 @@ import Foundation
 /// 0.9282/0.2358), 그 밖의 글꼴에서는 win 상자보다 작은 상자가 된다(Helvetica win
 /// 0.9502/0.2251 → 0.8146/0.0895, Times New Roman 0.8911/0.2163 + gap 0.0425 →
 /// 0.8009/0.0836). 어느 표(win·hhea·typo·bbox)로도 설명되지 않던 라틴 글꼴의 밑줄
-/// 자리가 이 되풀이로 0.002em 안에서 맞는다.
+/// 자리가 이 되풀이로 0.002em 안에서 맞는다. 취소선은 그 상자가 아니라 **베이스라인 높이**
+/// (`baseline` — 줄 상자 윗변에서 베이스라인까지)의 0.23배다 (#257, 한글 12.30 글꼴 59종 실측 —
+/// `HwpDecorationLineGeometry.msWordStrikethrough`).
 ///
 /// **CJK 판정은 OS/2 `ulUnicodeRange2`의 비트 48–59·61**(OpenType 이름으로 48 CJK
 /// 기호·49 히라가나·50 가타카나·51 주음·52 한글 호환 자모·53 파스파·54 CJK 괄호·55 CJK
@@ -61,7 +63,8 @@ import Foundation
 public struct HwpMsWordLineBox: Hashable, Sendable {
     /// 줄 상자 높이 (em 또는 pt)
     public let lineHeight: CGFloat
-    /// 줄 상자 상단에서 베이스라인까지 (em 또는 pt)
+    /// 줄 상자 상단에서 베이스라인까지 (em 또는 pt) — MS 워드 호환 문서의 취소선은 run 글꼴 상자의
+    /// 이 높이의 0.23배에 놓인다 (#257, `HwpRenderTuning.Text.msWordStrikethroughBaselineRatio`).
     public let baseline: CGFloat
     /// 장식선 기준 상자 높이 — 밑줄이 줄 상자 가장자리에서 들어오는 거리와 두께의 기준
     /// (`HwpDecorationLineGeometry.msWordUnderlineBelow`). 글꼴 하나의 상자나 글자 run들을
