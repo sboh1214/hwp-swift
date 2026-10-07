@@ -28,7 +28,7 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
    `inline-object-marker-size`·`inline-table-actual-height`·`mixed-size-decorations`·
    `ms-word-line-shapes`·`ms-word-paragraph-end-box`·`ms-word-script-strikethrough`·
    `ms-word-space-width`·`note-reference-strikethrough`·`page-end-line-box`·
-   `paragraph-end-char-size`·`space-width`·
+   `paragraph-end-char-size`·`script-strikethrough-large`·`space-width`·
    `table-border-chains`·`table-border-corners`·`table-cell-spacing`·`wide-tables`)은 `.hwp`와 `.hwpx`를
    **같은 편집 세션에서 연달아** 저장해야 두
    파일이 같은 문서가 된다. 한글 GUI로 만들기 어려운 조합은 합성 HWPX를 한글로 열어 두 형식으로
@@ -140,7 +140,7 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   `hh:strikeout@shape`와 슬롯별 `hh:relSz`가 HWP 쌍과 같은 선 모양·상대 크기로 옮겨지는 표본이기도 하다.
   MS 워드 호환 문서의 첨자 취소선 자리는 #248에서 `ms-word-script-strikethrough` 쌍으로 저작했다 —
   코퍼스의 MS 워드 호환 실물에 위·아래 첨자 취소선이 없어, 한글이 첨자 취소선을 첨자로 옮겨진 베이스라인
-  위 보통 글자 취소선 높이의 0.696배(한글 문서의 약 0.64배 — 첨자 글리프 축소 비율 — 와 다르다)에 그리는
+  위 보통 글자 취소선 높이의 0.696배(한글 문서·한글 2007 호환 문서의 89/140배(#258)와 다르다)에 그리는
   규칙을 렌더 해시·골든이 잡지 못하던 자리의 실물 근거다. `hh:supscript`·`hh:subscript`와 밑줄 종류
   `CENTER`, 슬롯별 `hh:offset`이 HWP 쌍과 같은 첨자·장식·글자 위치로 옮겨지는 표본이기도 하다.
   빈칸(U+0020) 폭은 #249에서 `space-width`(한글 문서)·`ms-word-space-width`(MS 워드 호환 문서) 두 쌍으로
@@ -178,6 +178,11 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   취소선 높이를 run마다 따로 잰다) 규칙을 렌더 해시·골든이 잡지 못하던 자리의 실물 근거다.
   `hp:footNotePr`·`hp:autoNum`의 `hp:autoNumFormat@supscript`와 `hp:endNote`가 HWP 쌍과 같은 번호 모양·
   주석 종류로 옮겨지는 표본이기도 하다.
+  한글 문서의 큰 첨자 취소선은 #258에서 `script-strikethrough-large` 쌍으로 저작했다 — 한글 문서의 첨자
+  취소선 쌍(`script-decorations` 10pt·`mixed-size-decorations` M11 기본 20pt)은 첨자 취소선 높이가 보통
+  글자 취소선 높이의 89/140배인지 첨자 글리프 축소 비율 0.64배인지를 가를 수 없어(차가 0.015·0.03pt로 한글
+  PDF의 장치 좌표 0.12pt 안), 한글이 그 높이를 ⌊89 × 기본 크기(HWPUNIT) ÷ 400⌋에 두는 규칙을 렌더 해시·
+  골든이 잡지 못하던 자리의 실물 근거다 — 50–160pt에서는 그 차가 0.075–0.24pt다.
 
 ## manifest 작성 기준
 

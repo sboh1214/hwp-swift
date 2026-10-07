@@ -10,7 +10,7 @@ import XCTest
 /// MS 워드 호환 문서의 첨자 취소선 (#248) — 위·아래 첨자 run의 취소선(글자 가운데 밑줄 포함)은
 /// **첨자로 옮겨진 베이스라인** 위, 같은 글꼴·기본 크기 보통 글자 취소선 높이의
 /// `msWordScriptStrikethroughScale`(0.696)배에 놓인다. 한글 문서·한글 2007 호환 문서 갈래는 그
-/// 배율로 첨자 글리프 축소 비율(0.64)을 쓴다 (#179·#210 — 한글 실측은 0.636). 두께는 한글 문서·MS
+/// 배율로 `scriptStrikethroughScale`(89/140, #258)을 쓴다 — 첨자 글리프 축소 비율 0.64가 아니다. 두께는 한글 문서·MS
 /// 워드 호환 문서가 축소 전 기본 크기의 장치 단위 획(#252), 한글 2007 호환 문서가 크기와 무관한
 /// 고정 0.36pt다 (#210).
 ///
@@ -71,8 +71,8 @@ extension HwpDecorationLineGeometryTests {
     }
 
     /// 산식 자체 — MS 워드 호환 문서의 첨자 run은 보통 run 취소선 높이의 0.696배(7.062pt), 두께는
-    /// 기본 크기 40pt 몫의 획 13u = 1.56pt다 (#252). 한글 문서·한글 2007 호환 문서의 첨자 run은 종전대로 0.35 × 축소 크기
-    /// (8.96pt)다 — 그 갈래는 첨자 배율로 글리프 축소 비율을 쓴다. 수정 전 MS 워드 갈래는 0.64배
+    /// 기본 크기 40pt 몫의 획 13u = 1.56pt다 (#252). 한글 문서·한글 2007 호환 문서의 첨자 run은 보통
+    /// 높이 0.35 × 40의 89/140배(8.90pt, #258)다. 수정 전 MS 워드 갈래는 0.64배
     /// (6.493pt)라 40pt에서 0.57pt 낮았다.
     func testMsWordScriptStrikethroughHeightIsTheScaledPlainHeight() {
         let layer = HwpPageLayer()
@@ -95,16 +95,49 @@ extension HwpDecorationLineGeometryTests {
         expect(scripted.center).to(beCloseTo(7.062, within: 0.001))
         expect(scripted.thickness).to(beCloseTo(1.56, within: 0.000_1))
 
-        // 한글 문서·한글 2007 호환 문서 — 첨자 배율은 글리프 축소 비율 그대로
+        // 한글 문서·한글 2007 호환 문서 — 첨자 배율은 글리프 축소 비율이 아니라 89/140 (#258)
         for target in [nil, HwpCompatibleDocumentTarget.hwp200X] {
             let native = layer.strikethroughLine(
                 msWordScriptRun(size: size, shift: 0.44 * size, color: cyan, target: target),
                 msWordFont: nil, fontSize: scriptSize
             )
+            let height = 0.35 * size * HwpRenderTuning.Text.scriptStrikethroughScale
             expect(native.center).to(
-                beCloseTo(0.35 * scriptSize, within: 0.000_1),
-                description: "\(String(describing: target))"
+                beCloseTo(height, within: 0.000_1), description: "\(String(describing: target))"
             )
+        }
+    }
+
+    /// 한글 문서·한글 2007 호환 문서의 첨자 run은 렌더러 경로(`strikethroughLine`)에서 기본 크기의 0.2225배
+    /// (보통 높이 0.35배의 89/140)다 (#258) — 위·아래 첨자가 같고 첨자 글리프 축소 비율 0.64(0.224배)와는
+    /// 기본 크기의 0.0015배씩 갈린다 (50pt 0.075·250pt 0.375pt). 한글 12.30 PDF는 옮겨진 베이스라인 위
+    /// ⌊89 × 기본 크기(HWPUNIT) ÷ 400⌋에 긋는다 — 버림 몫 0.01pt 안이다. 두께는 축소 전 기본 크기의 획
+    /// (한글 문서)·고정 0.36pt(한글 2007 호환 문서)라 첨자와 무관하다.
+    func testNativeScriptStrikethroughIsTheScaledPlainHeight() {
+        let layer = HwpPageLayer()
+        let cyan = CGColor(red: 0, green: 1, blue: 1, alpha: 1)
+        for target in [nil, HwpCompatibleDocumentTarget.hwp200X] {
+            for size in [CGFloat(50), 80, 100, 160, 250] {
+                for shift in [0.44 * size, -0.12 * size] {
+                    let label = "\(String(describing: target)) \(size)pt 첨자 몫 \(shift)"
+                    let glyphSize = size * Self.glyphScriptScale
+                    let line = layer.strikethroughLine(
+                        msWordScriptRun(size: size, shift: shift, color: cyan, target: target),
+                        msWordFont: nil, fontSize: glyphSize
+                    )
+                    expect(line.center)
+                        .to(beCloseTo(0.2225 * size, within: 0.000_1), description: label)
+                    let hancom = (89 * size * 100 / 400).rounded(.down) / 100
+                    expect(line.center).to(beCloseTo(hancom, within: 0.01), description: label)
+                    expect(0.224 * size - line.center)
+                        .to(beGreaterThan(0.07), description: "\(label): 0.64배와 갈린다")
+                    let thickness = target == nil
+                        ? HwpDecorationLineGeometry.strokeThickness(referenceSize: size)
+                        : HwpRenderTuning.Text.hwp200XDecorationLineThickness
+                    expect(line.thickness)
+                        .to(beCloseTo(thickness, within: 0.000_1), description: label)
+                }
+            }
         }
     }
 

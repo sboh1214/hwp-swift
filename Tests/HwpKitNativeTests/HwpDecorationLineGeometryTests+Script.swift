@@ -21,6 +21,8 @@ import XCTest
 /// | 위 첨자 + 위치 50 | 6.36pt · −0.60 | 위 첨자와 같은 자리 | 제자리 | 제자리 |
 ///
 /// 선 두께는 네 조합 모두 본문과 같은 0.36pt(축소 전 기본 크기 10pt의 장치 단위 획 3u, #252)다.
+/// 첨자 취소선 높이 0.35 × 6.36(= 2.226)은 #258이 50–250pt로 넓혀 확정한 규칙 — 보통 높이 0.35 × 10의
+/// 89/140배(2.225) — 과 같은 값이다 (이 크기에서는 0.64배 2.24와 장치 좌표 안이라 갈리지 않는다).
 ///
 /// `extension`에 두는 이유는 `HwpDecorationLineGeometryTests` 본문이
 /// `type_body_length` 경고선에 닿아 있어서다. 래스터·측정 헬퍼는 `+Support`.
@@ -101,7 +103,7 @@ extension HwpDecorationLineGeometryTests {
 
     /// 취소선은 첨자 몫만 따라간다 — 글자 위치만 준 run(자홍)의 선은 본문(청록)과
     /// 같은 행이고, 첨자 + 글자 위치 run(초록)의 선은 첨자 몫 4.4pt만큼 올라간 자리에
-    /// 줄어든 크기의 0.35배로 놓인다. #179 전에는 첨자 선만 원래 베이스라인 위
+    /// 보통 높이의 89/140배(#258)로 놓인다. #179 전에는 첨자 선만 원래 베이스라인 위
     /// 0.35 × 축소 크기(당시 6.7pt = 2.3pt, 본문보다 1.2pt 아래)에 그려 첨자 글리프
     /// 밖으로 벗어났다.
     func testStrikethroughFollowsScriptShiftButNotFaceLocation() throws {
@@ -130,11 +132,12 @@ extension HwpDecorationLineGeometryTests {
 
         expect(located).to(beCloseTo(plain, within: 0.2), description: "글자 위치는 선을 안 옮긴다")
         // 위 방향 = 위에서부터 잰 행이 작아진다. 본문 선은 +0.35 × 10, 첨자 선은
-        // +4.4 + 0.35 × 6.4이라 차는 4.4 − 0.35 × 3.6 = 3.14pt다.
+        // +4.4 + 0.35 × 10 × 89/140이라 차는 4.4 − 0.35 × 10 × 51/140 = 3.125pt다.
         let ratio = HwpRenderTuning.Text.strikethroughCenterRatio
-        let expected = Self.scriptShift + ratio * Self.scriptSize - ratio * Self.baseSize
+        let scriptHeight = ratio * Self.baseSize * HwpRenderTuning.Text.scriptStrikethroughScale
+        let expected = Self.scriptShift + scriptHeight - ratio * Self.baseSize
         expect(plain - scripted).to(beCloseTo(expected, within: 0.2))
-        expect(expected).to(beCloseTo(3.14, within: 0.001))
+        expect(expected).to(beCloseTo(3.125, within: 0.001))
     }
 
     /// 아래쪽 밑줄은 첨자에도 글자 위치에도 제자리이고 축소 전 크기 기준이다 —

@@ -138,9 +138,10 @@ extension HwpDecorationLineGeometryTests {
         expect(native.center).to(beCloseTo(7.0, within: 0.000_1))
     }
 
-    /// 위 첨자 글자 모양 안의 번호는 그 첨자의 선 자리 — 번호 축소만 무르고 첨자 축소(0.64)는 남는다.
-    /// 한글 40pt: 첨자 선과 번호 선 모두 +26.52pt, MS 워드 호환은 둘 다 +25.68pt (장치 0.12pt
-    /// 양자화 — 우리 모형은 0.44 × 40 + 0.35 × 25.6 = 26.56, MS 워드 17.6 + 0.696 × 11.68 = 25.73).
+    /// 위 첨자 글자 모양 안의 번호는 그 첨자의 선 자리 — 번호 축소만 무르고 첨자 축소(0.64)는 남아 첨자로
+    /// 판정된다. 한글 40pt(함초롬바탕): 첨자 선과 번호 선 모두 +26.52pt, MS 워드 호환은 둘 다 +25.68pt
+    /// (장치 0.12pt 양자화 — 우리 모형은 0.44 × 40 + 0.35 × 40 × 89/140 = 26.50, MS 워드는 #257 모형으로
+    /// 17.6 + 0.696 × 11.64 = 25.70; 이 테스트의 Menlo는 0.696 × 10.146이다).
     /// 첨자 몫 키는 두 run이 같고(0.44 × 40), 선 자리는 그 위에 더해진다.
     func testNoteReferenceInsideSuperscriptFollowsTheScriptStrikethrough() {
         let cyan = CGColor(red: 0, green: 1, blue: 1, alpha: 1)
@@ -164,7 +165,9 @@ extension HwpDecorationLineGeometryTests {
             noteRun(size: size, color: cyan, target: nil, superscript: true, note: 0),
             msWordFont: nil
         )
-        expect(native.center).to(beCloseTo(0.35 * size * Self.charScriptScale, within: 0.000_1))
+        expect(native.center).to(beCloseTo(
+            0.35 * size * HwpRenderTuning.Text.scriptStrikethroughScale, within: 0.000_1
+        ))
     }
 
     /// 픽셀로 — 본문(청록) · 번호(자홍) · 본문(청록)을 한 줄에 그리면 세 문서 갈래 모두 번호 선이 본문

@@ -127,7 +127,9 @@ public extension HwpTextRunBuilder {
 /// 첨자는 0.12배 아래(10pt 1.20·20pt 2.40·100pt 12.00)에 놓인다. 글자 위치(`faceLocation`)가
 /// 옮긴 몫은 여기에 **더해진다** (`addBaselineShift`). 종전 값 0.67·0.33·0.30은
 /// `CharShapeProperty` 실물의 육안 추정이라 10pt에서 위 첨자가 1.1pt 낮고 아래 첨자가 1.8pt
-/// 낮으며 글리프가 0.3pt 컸다.
+/// 낮으며 글리프가 0.3pt 컸다. 첨자 run의 취소선 높이는 글리프 축소 배율과 따로다 —
+/// `HwpRenderTuning.Text.scriptStrikethroughScale`(89/140, #258)·
+/// `msWordScriptStrikethroughScale`(#248).
 extension HwpTextRunBuilder {
     /// 첨자 글꼴 크기 배율 (위·아래 첨자 공통, 글꼴 크기 대비)
     static let superscriptScale: CGFloat = 0.64

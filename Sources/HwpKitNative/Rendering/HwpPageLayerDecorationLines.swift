@@ -126,26 +126,25 @@ extension HwpPageLayer {
     /// 갈래 모두 **run 단위**다. `fontSize`는 run 글꼴 크기(첨자면 줄어든 크기)이고,
     /// 세 갈래 모두 글자 모양 기본 크기를 쓴다 (슬롯 상대 크기는 곱하지 않는다 —
     /// #187·#210·#226 실측: 기본 40pt·상대 크기 50% run의 취소선 +14.04pt, 기본 20pt·상대
-    /// 크기 50% 위 첨자는 옮겨진 베이스라인 위 0.35 × 12.8pt). 첨자 run이면 그 크기를
-    /// 줄인다 — 한글 문서·한글 2007 호환 문서는 첨자 축소 비율(run 글꼴 크기 ÷ 축소 전
-    /// 크기, #179·#210)을, MS 워드 호환 문서는 그보다 큰 `msWordScriptStrikethroughScale`
-    /// (0.696, #248)을 곱한다. 각주·미주 참조 번호의 축소는 첨자가 아니다 — 호출자가
+    /// 크기 50% 위 첨자는 옮겨진 베이스라인 위 4.44pt ≈ 0.35 × 20 × 0.6357). 첨자 run이면 그
+    /// 높이를 줄인다 — 한글 문서·한글 2007 호환 문서는 `scriptStrikethroughScale`(89/140 ≈ 0.6357,
+    /// #258)을, MS 워드 호환 문서는 그보다 큰 `msWordScriptStrikethroughScale`(0.696, #248)을
+    /// 곱한다. 둘 다 첨자 글리프 축소 비율(0.64)이 아니다 — 세 갈래가 같은 첨자 판정(run 글꼴
+    /// 크기 ÷ 축소 전 크기 < 0.99)을 쓴다. 각주·미주 참조 번호의 축소는 첨자가 아니다 — 호출자가
     /// `strikethroughRunFontSize`로 무른 크기를 넘긴다 (#256).
     func strikethroughLine(
         _ attributes: [NSAttributedString.Key: Any], msWordFont: CTFont?, fontSize size: CGFloat
     ) -> HwpDecorationLineGeometry.Line {
-        let preScriptSize = preScriptFontSize(attributes)
         let baseSize = decorationBaseFontSize(attributes)
-        let scriptScale = size / max(preScriptSize, 0.01)
-        let scriptSize = baseSize * scriptScale
+        // 첨자 판정은 축소 비율이 1보다 확실히 작은지로 한다 — 첨자 축소는 0.64배라 0.99
+        // 아래이고 (참조 번호의 0.75배는 `strikethroughRunFontSize`가 미리 무른다), 보통 run의
+        // 글꼴 크기와 축소 전 크기는 같은 값에서 나오지만 부동소수 비교로 1을 가르면 미세
+        // 오차에 보통 run이 첨자 자리로 떨어질 수 있다.
+        let isScript = size / max(preScriptFontSize(attributes), 0.01) < 0.99
         if let msWordFont {
             // 첨자 run은 한글이 같은 글꼴·기본 크기 보통 글자 취소선 높이의 0.696배에 그린다
-            // — 글리프 축소 비율 0.64가 아니다 (#248, 한글 12.30 PDF 실측: 글꼴 10종 × 8~
-            // 100pt × 위·아래 첨자 360표본, `HwpRenderTuning.Text.msWordScriptStrikethroughScale`).
-            // 첨자 판정은 축소 비율이 1보다 확실히 작은지로 한다 — 첨자 축소는 0.64배라
-            // 0.99 아래이고 (참조 번호의 0.75배는 `strikethroughRunFontSize`가 미리 무른다), 보통 run의 글꼴 크기와 축소 전 크기는 같은 값에서 나오지만
-            // 부동소수 비교로 1을 가르면 미세 오차에 보통 run이 첨자 자리로 떨어질 수 있다.
-            let boxSize = scriptScale < 0.99
+            // (#248, 한글 12.30 PDF 실측: 글꼴 10종 × 8~100pt × 위·아래 첨자 360표본).
+            let boxSize = isScript
                 ? baseSize * HwpRenderTuning.Text.msWordScriptStrikethroughScale
                 : baseSize
             return HwpDecorationLineGeometry.msWordStrikethrough(
@@ -153,24 +152,28 @@ extension HwpPageLayer {
                 thicknessFontSize: baseSize
             )
         }
+        // 한글 문서·한글 2007 호환 문서의 첨자 run은 보통 글자 취소선 높이의 89/140배다 (#258,
+        // 한글 12.30 PDF 실측: 두 갈래 × 8~250pt 1,324표본이 ⌊89 × 기본 크기(HWPUNIT) ÷ 400⌋ —
+        // 기본 40pt 위 첨자는 옮겨진 베이스라인 위 8.90pt, 실측 8.88).
+        let strikeSize = isScript
+            ? baseSize * HwpRenderTuning.Text.scriptStrikethroughScale
+            : baseSize
         if isHwp2007Compatible(attributes) {
-            // 실측(2026-09-22): 기본 40pt 위 첨자 run(글리프 25.56pt)의 취소선이 첨자로
-            // 옮겨진 베이스라인 위 8.88pt = 0.35 × 25.56이다.
-            return HwpDecorationLineGeometry.hwp200XStrikethrough(fontSize: scriptSize)
+            return HwpDecorationLineGeometry.hwp200XStrikethrough(fontSize: strikeSize)
         }
         return HwpDecorationLineGeometry.strikethrough(
-            fontSize: scriptSize, thicknessFontSize: baseSize
+            fontSize: strikeSize, thicknessFontSize: baseSize
         )
     }
 
     /// 취소선 자리가 보는 run 글꼴 크기 — 각주·미주 참조 번호 run이면 번호가 글리프에 건 축소
     /// (`HwpAttributedStringKey.noteReferenceScale`, 0.75배)를 무른다 (#256). `strikethroughLine`은
-    /// run 글꼴 크기 ÷ 첨자 축소 전 크기를 첨자 축소 비율로 읽으므로, 무르지 않으면 번호가 첨자로
-    /// 읽혀 선이 줄어든 자리(한글 문서 0.35 × 0.75em)·MS 워드 호환 문서의 첨자 배율(0.696)로 간다.
-    /// 한글은 번호 선을 번호가 놓인 글자 모양의 자리에 그린다 (2026-10-06 한글 12.30 PDF 실측: 한글
+    /// run 글꼴 크기 ÷ 첨자 축소 전 크기로 첨자를 판정하므로, 무르지 않으면 번호가 첨자로 읽혀 선이
+    /// 첨자 자리(한글 문서·한글 2007 호환 문서는 보통 높이의 89/140배, MS 워드 호환 문서는 0.696배)로
+    /// 간다. 한글은 번호 선을 번호가 놓인 글자 모양의 자리에 그린다 (2026-10-06 한글 12.30 PDF 실측: 한글
     /// 문서 20pt 본문 +6.96pt = 번호 선, 종전 우리 +9.45pt). 위 첨자 글자 모양 안의 번호는 무른 뒤에도
     /// 첨자 축소(0.64)가 남아 그 첨자의 선 자리가 된다 — 한글도 40pt 위 첨자 run 안 번호의 선을 그
-    /// 첨자 선과 같은 +26.52pt에 그린다.
+    /// 첨자 선과 같은 +26.52pt에 그린다 (#258: 100·200pt도 그 첨자 선과 같은 +66.24·+132.48pt).
     func strikethroughRunFontSize(_ attributes: [NSAttributedString.Key: Any]) -> CGFloat {
         let size = runFont(attributes).map(CTFontGetSize) ?? 10
         guard let scale = attributes[HwpAttributedStringKey.noteReferenceScale] as? NSNumber,

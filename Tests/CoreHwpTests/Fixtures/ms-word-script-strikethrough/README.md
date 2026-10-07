@@ -4,7 +4,7 @@
 취소선을 한 줄씩 나란히 둔 8문단을 실은 합성 HWPX를 한컴오피스 한글 12.30.0 (build 6523)에서 열어
 2026-10-02에 `한글 문서 (*.hwp)`로 저장한 binary HWP fixture다. 한글이 이 문서에서 **위·아래 첨자 run의
 취소선을 첨자로 옮겨진 베이스라인 위, 같은 글꼴·기본 크기 보통 글자 취소선 높이의 0.696배에** 그리는
-규칙(#248 — 한글 문서는 첨자 글리프 축소 비율 0.64배에 가깝다(실측 0.636), #179)의 실물 근거다. 같은
+규칙(#248 — 한글 문서·한글 2007 호환 문서는 89/140배, #258·#179)의 실물 근거다. 같은
 편집 세션에서 저장한 HWPX 쌍(`HwpxFixtures/ms-word-script-strikethrough`)과 PDF 내보내기(1쪽)가 같은
 문서이고, PDF 좌표가 렌더 핀의 오라클이다 (`HwpKitTests/FixtureDecorationLineRenderTests+MsWordScript.swift`).
 
