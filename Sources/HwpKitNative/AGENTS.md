@@ -198,12 +198,30 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   크기인지를 실측으로 정할 것 — 비율은 `HwpDecorationLineGeometryTests`(+`+Script`·`+Compat`·
   `+Hwp2007`·`+LineWide`)가 폰트 독립으로, 절대 위치는 `FixtureDecorationLineRenderTests`
   (+`+Script`·`+Compat`·`+Hwp2007`·`+LineWide`)가 픽스처 픽셀로 잡는다.
+- **음영·실선 장식은 줄 단위로 채운다** (#260, `SolidFillBatch`). 자간이 글자 전진량의 %라(`Sources/
+  HwpKitCore/AGENTS.md` "자간은 글자마다") 자간 있는 라틴 글자열은 글자마다 kern·tracking 값이 달라
+  CoreText run이 글자 하나씩이다. run마다 사각형을 칠하면 소수 좌표에서 맞닿은 두 사각형이 경계 픽셀을 반씩 덮어
+  그 열이 옅게 남는다(같은 색 [2, 10.5]·[10.5, 19.8]의 경계 열 커버리지 0.75 — 실측) — 글자마다 밑줄·음영에
+  이음매가 생긴다. 그래서 `drawDecoratedLine`이 음영 상자(`collectShade`)와 실선 사각형(`fillLine`의 실선
+  갈래)을 줄마다 색별 한 경로에 모아 한 번에 칠한다(합집합 위에서 커버리지를 재므로 이음매가 없다).
+  칠하는 차례는 run마다 그리던 종전 순서를 지킨다 — 글자 모양 선(밑줄·위 밑줄·취소선)의 실선을 칠한 뒤
+  강조점, 그다음 변경 추적 삽입 밑줄(따로 모은 경로), 마지막으로 탭 채움이다(실선을 줄 끝에 한꺼번에 칠하면
+  강조점·탭 채움을 덮는다). **줄 끝 글자의 양수 자간은 장식하지 않는다**(`lineEndTrackingClip`) — 한글은 줄의
+  마지막 글자에 자간을 주지 않는데 CoreText는 그 tracking을 줄 끝 공백처럼 매달아 둘 뿐 글자 진행 폭에 남기므로,
+  run 경계로 재는 음영·실선·선 모양 span·메모 괄호가 그 몫만큼 글자 뒤로(오른쪽 정렬 줄은 여백 밖으로)
+  뻗었다. 줄이 공백 없이 그 글자로 끝날 때(폭 0 run 뒤의 마지막 run이 tracking을 지니고 줄 끝 공백 폭이 그
+  값과 같을 때)만 자른다 — 빈칸이 뒤따르면 빈칸 밑 선까지 잘리므로 그대로 둔다. 메모 앵커 괄호도 run마다 세우면 글자마다
+  섰으므로 **줄 안에서 잇닿은 앵커 run을 한 범위로 묶어** 양 끝에만 세운다(`drawMemoAnchorBrackets`, 두 앵커가
+  틈 없이 붙으면 한 쌍으로 보인다 — 한글도 범위 양 끝의 괄호다). 장식 경계(`runBounds`)와 강조점은 run 위치에
+  **글꼴 행렬을 씌운다** — `CTRunGetPositions`는 행렬 적용 전 좌표라 장평 50% run이 줄 24pt 자리에서 시작하면
+  48pt로 읽힌다(실측). 줄 머리 run만 0이라 맞았는데, 장평 글자열이 글자마다 run이 되며 드러났다
+  (`HwpDrawnTextLayoutHyperlinkRects`는 이미 행렬을 씌운다). 가드: `HwpPageLayerLetterSpacingTests`.
 - **선 모양(점선·파선·원형 점선·여러 줄·물결, #191)은 글자 모양 run 단위로 편다**
   (`HwpPageLayerLineShapes`). `drawDecoratedLine`이 줄마다 `lineShapeSpans(of:)`로 같은
   글자 모양 id(`hwp.charShapeId`)의 잇닿은 CoreText run을 묶어 첫 run 자리에 합친 경계를
   두고, `fillLine`은 모양 키(`hwp.underlineShape`·`hwp.strikethroughShape`)가 있으면 그
   span에만 `HwpLineShapeGeometry.path`를 편다(묶음의 나머지 run은 아무것도 그리지 않는다;
-  실선은 종전대로 run마다 사각형). 한글이 그렇다 — 한 글자 모양 안의 한글↔라틴 슬롯 전환
+  실선은 run마다 사각형이되 아래 "음영·실선 장식은 줄 단위로 채운다"대로 줄의 색별 경로에 모아 칠한다). 한글이 그렇다 — 한 글자 모양 안의 한글↔라틴 슬롯 전환
   (CoreText가 run을 가르는 경계)은 패턴이 이어지고 색만 다른 이웃 글자 모양은 run 시작에서
   다시 시작한다 (2026-09-17 실측). 묶음 열쇠는 id에 더해 선을 정하는 키다
   (`sameLineShapeGroup`: 모양·유무·색·축척 크기·`scriptBaselineOffset`·각주·미주 참조 번호 신원
