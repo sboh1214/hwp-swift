@@ -1,0 +1,216 @@
+import CoreGraphics
+@testable import CoreHwp
+import Foundation
+@testable import HwpKitCore
+import Nimble
+import XCTest
+
+#if canImport(CoreText)
+    import CoreText
+
+    /// 줄의 마지막 글자는 자간을 받지 않는다 (#260) — 한글은 줄 맞춤·오른쪽·가운데·양쪽 정렬을 모두
+    /// 마지막 내용 글자를 자간 없는 전진량으로 잰다. 양수 자간(tracking)은 CoreText가 줄 끝에서 매달리는
+    /// 공백처럼 빼고 재므로 그대로 같고, 음수(Menlo는 커닝 집합을 모르는 글꼴이라 tracking — kern이어도
+    /// 같다)는 `HwpLineBreaker`(줄 맞춤·정렬)와
+    /// `HwpWordJustification`(양쪽 정렬)이 뺀다. 결정론 resolver(Menlo, 12pt 글자 모양 헬퍼)로 짠다.
+    extension HwpTextRunBuilderTests {
+        private enum Alignment: UInt32 {
+            case justify = 0
+            case left = 1
+            case right = 2
+        }
+
+        /// Menlo 12pt 라틴 자간 `spacing`%, 정렬 `alignment`의 `text` 조판 문자열.
+        private func spacedParagraph(
+            _ text: String, spacing: Int8, alignment: Alignment
+        ) throws -> NSAttributedString {
+            let shapes = [UInt32(0): try charShape(faceSpacing: [0, spacing, 0, 0, 0, 0, 0])]
+            let documentIndex = HwpIndex(
+                charShapes: shapes,
+                paraShapes: [0: CoreHwp.HwpParaShape(
+                    property1: alignment.rawValue << 2, marginLeft: 0, tabDefId: 0
+                )],
+                borderFills: [:], tabDefs: [:], styles: [:], bullets: [:], numberings: [:],
+                binData: [:], faceNamesKorean: [:], faceNamesEnglish: [:], faceNamesChinese: [:],
+                faceNamesJapanese: [:], faceNamesEtc: [:], faceNamesSymbol: [:], faceNamesUser: [:]
+            )
+            return HwpTextRunBuilder(index: documentIndex, fontResolver: .testDeterministic)
+                .build(paragraph: paragraph(text: text, runs: [(0, 0)]))
+        }
+
+        /// Menlo 12pt `a`의 전진량.
+        private var menloA: CGFloat {
+            let font = CTFontCreateWithName("Menlo-Regular" as CFString, 12, nil)
+            var character: UniChar = 0x61
+            var glyph = CGGlyph()
+            _ = CTFontGetGlyphsForCharacters(font, &character, &glyph, 1)
+            var advance = CGSize.zero
+            CTFontGetAdvancesForGlyphs(font, .horizontal, &glyph, &advance, 1)
+            return advance.width
+        }
+
+        /// `aaaaa` × `count` (빈칸 = 고정 폭 6pt × (1 + 자간))의 첫 `words`단어 폭 — 마지막 글자
+        /// 자간을 넣고 잰 값과 뺀 값.
+        private func widths(words: Int, ratio: CGFloat) -> (full: CGFloat, lineEnd: CGFloat) {
+            let glyph = menloA * (1 + ratio)
+            let full = CGFloat(words * 5) * glyph + CGFloat(words - 1) * 6 * (1 + ratio)
+            return (full, full - menloA * ratio)
+        }
+
+        private func firstLineGlyphCount(_ attributed: NSAttributedString, width: CGFloat) -> Int {
+            let lines = HwpDrawnTextLayout.lines(attributedString: attributed, origin: .zero, lineWidth: width)
+            let string = attributed.string as NSString
+            let range = lines[0].stringRange
+            return (0 ..< range.length).filter { string.character(at: range.location + $0) == 0x61 }.count
+        }
+
+        /// 문자열 위치 `index`의 글리프가 그려지는 x (장평 행렬 포함).
+        private static func glyphOrigin(of index: Int, in line: HwpDrawnLine) -> CGFloat? {
+            for run in CTLineGetGlyphRuns(line.line) as? [CTRun] ?? [] {
+                let count = CTRunGetGlyphCount(run)
+                var positions = [CGPoint](repeating: .zero, count: count)
+                var indices = [CFIndex](repeating: 0, count: count)
+                CTRunGetPositions(run, CFRange(location: 0, length: count), &positions)
+                CTRunGetStringIndices(run, CFRange(location: 0, length: count), &indices)
+                for (position, stringIndex) in zip(positions, indices) where stringIndex == index {
+                    return line.baselineOrigin.x + position.applying(CTRunGetTextMatrix(run)).x
+                }
+            }
+            return nil
+        }
+
+        func testNegativeSpacingLineBreaksWithoutTheLastCharacterSpacing() throws {
+            // 라틴 −20%, 7단어가 자간을 넣고 재면 들어가고 빼고 재면 넘치는 폭 — 한글처럼 6단어.
+            let text = Array(repeating: "aaaaa", count: 8).joined(separator: " ")
+            let attributed = try spacedParagraph(text, spacing: -20, alignment: .left)
+            let seven = widths(words: 7, ratio: -0.2)
+            expect(seven.full) < seven.lineEnd
+            let width = (seven.full + seven.lineEnd) / 2
+            expect(self.firstLineGlyphCount(attributed, width: width)) == 30
+            // 대조군: 빼고 재도 들어가는 폭이면 7단어다.
+            expect(self.firstLineGlyphCount(attributed, width: seven.lineEnd + 0.01)) == 35
+        }
+
+        func testPositiveSpacingLineFitsWithoutTheLastCharacterSpacing() throws {
+            // 라틴 +20%, 5단어가 자간을 빼고 재면 들어가는 폭 — CoreText가 줄 끝 양수 tracking을 매달아
+            // 그대로 5단어 (한글과 같다).
+            let text = Array(repeating: "aaaaa", count: 6).joined(separator: " ")
+            let attributed = try spacedParagraph(text, spacing: 20, alignment: .left)
+            let five = widths(words: 5, ratio: 0.2)
+            let width = (five.full + five.lineEnd) / 2
+            expect(self.firstLineGlyphCount(attributed, width: width)) == 25
+        }
+
+        func testRefittedParagraphStaysOneChunkForMeasurementAndRender() throws {
+            // 다시 나눈 줄도 청크 하나로 잇는다 — 측정·렌더가 같은 줄 범위를 보고, 공유 코어 한 번의
+            // 호출이 문단을 덮는다 (`HwpLayoutRenderParitySweepTests`의 3-way 전제).
+            let text = Array(repeating: "aaaaa", count: 20).joined(separator: " ")
+            let attributed = try spacedParagraph(text, spacing: -20, alignment: .left)
+            let seven = widths(words: 7, ratio: -0.2)
+            let width = (seven.full + seven.lineEnd) / 2
+            let chunk = try XCTUnwrap(HwpLineBreaker.nextFrameChunk(
+                framesetter: CTFramesetterCreateWithAttributedString(attributed),
+                typesetter: CTTypesetterCreateWithAttributedString(attributed),
+                attributedString: attributed, startLocation: 0, fullLength: attributed.length,
+                remainingLineBudget: HwpParagraphLayout.maximumLineFrames, lineWidth: width
+            ))
+            expect(chunk.nextStart) == attributed.length
+            let drawn = HwpDrawnTextLayout.lines(attributedString: attributed, origin: .zero, lineWidth: width)
+            let measured = HwpParagraphLayout().layout(
+                attributedString: attributed,
+                paraShape: CoreHwp.HwpParaShape(property1: 1 << 2, marginLeft: 0, tabDefId: 0),
+                columnWidth: width
+            )
+            let coreRanges = chunk.lines.prefix(chunk.keepCount).map { line -> NSRange in
+                let range = CTLineGetStringRange(line)
+                return NSRange(location: range.location, length: range.length)
+            }
+            expect(drawn.map(\.stringRange)) == coreRanges
+            expect(measured.lines.map(\.attributedRange)) == coreRanges
+            // 줄마다 6단어 — 7단어째는 마지막 글자 자간을 빼면 넘친다.
+            expect(coreRanges.dropLast().allSatisfy { $0.length == 36 }) == true
+        }
+
+        func testRightAlignedLineEndsWithTheUnspacedAdvance() throws {
+            // 오른쪽 정렬: 마지막 글자가 오른쪽 끝 − 자간 없는 전진량에 놓인다 (한글 실측: Menlo 20pt
+            // 라틴 ±20%에서 둘 다 오른쪽 끝 − 12.00pt).
+            for spacing: Int8 in [-20, 20] {
+                let attributed = try spacedParagraph("abcd", spacing: spacing, alignment: .right)
+                let line = try XCTUnwrap(
+                    HwpDrawnTextLayout.lines(attributedString: attributed, origin: .zero, lineWidth: 200).first
+                )
+                let dOrigin = try XCTUnwrap(Self.glyphOrigin(of: 3, in: line))
+                expect(dOrigin + self.menloA).to(beCloseTo(200, within: 0.01), description: "\(spacing)%")
+            }
+        }
+
+        func testJustifiedLineEndsAtTheMarginWithoutTheLastCharacterSpacing() throws {
+            // 양쪽 정렬 줄: 마지막 글자 + 자간 없는 전진량 = 오른쪽 끝 (noori 실물·한글 실측).
+            let text = Array(repeating: "aaaaa", count: 12).joined(separator: " ")
+            let attributed = try spacedParagraph(text, spacing: -20, alignment: .justify)
+            let line = try XCTUnwrap(
+                HwpDrawnTextLayout.lines(attributedString: attributed, origin: .zero, lineWidth: 200).first
+            )
+            let lastA = (line.stringRange.location ..< NSMaxRange(line.stringRange)).last {
+                (attributed.string as NSString).character(at: $0) == 0x61
+            }
+            let origin = Self.glyphOrigin(of: try XCTUnwrap(lastA), in: line)
+            expect(try XCTUnwrap(origin) + self.menloA).to(beCloseTo(200, within: 0.01))
+        }
+
+        func testJustifiedLineWithoutSpacesEndsAtTheMargin() throws {
+            // 빈칸 없는 줄은 CoreText가 글자 사이로 벌리는데, 마지막 글자의 음수 자간을 넣고 맞추면 그
+            // 글자가 오른쪽 끝을 자간만큼 넘는다 — 그만큼 좁게 다시 맞춘다.
+            let attributed = try spacedParagraph(
+                String(repeating: "a", count: 60), spacing: -20, alignment: .justify
+            )
+            let line = try XCTUnwrap(
+                HwpDrawnTextLayout.lines(attributedString: attributed, origin: .zero, lineWidth: 200).first
+            )
+            let last = NSMaxRange(line.stringRange) - 1
+            let origin = try XCTUnwrap(Self.glyphOrigin(of: last, in: line))
+            expect(origin + self.menloA).to(beCloseTo(200, within: 0.01))
+        }
+
+        func testSlightOverflowAlignsTheContentWidth() throws {
+            // 한 줄 허용으로 접힌 줄의 정렬은 CoreText가 보통 줄을 정렬하는 내용 폭(줄 끝 공백과 매달린 양수
+            // tracking을 뺀 폭)으로 잰다 — 오른쪽 정렬이 마지막 글자를 오른쪽 끝 − 자간 없는 전진량에 둔다.
+            // 둘 다 typographic 폭(매달린 몫 포함)은 넘치고 내용 폭은 들어가는 줄이라 허용으로 접힌다.
+            let positive = try spacedParagraph("abcd", spacing: 20, alignment: .right)
+            let positiveWidth = 4 * menloA * 1.2 - menloA * 0.1
+            let trailing = try spacedParagraph("abcd ", spacing: 0, alignment: .right)
+            let trailingWidth = 4 * menloA + 4.5
+            for (attributed, width) in [(positive, positiveWidth), (trailing, trailingWidth)] {
+                expect(HwpDrawnTextLayout.slightOverflowLineMetrics(
+                    attributedString: attributed, lineWidth: width
+                )).toNot(beNil())
+                let lines = HwpDrawnTextLayout.lines(
+                    attributedString: attributed, origin: .zero, lineWidth: width
+                )
+                expect(lines.count) == 1
+                let dOrigin = try XCTUnwrap(lines.first.flatMap { Self.glyphOrigin(of: 3, in: $0) })
+                expect(dOrigin + self.menloA).to(beCloseTo(width, within: 0.01))
+            }
+        }
+
+        func testRefitDoesNotCommitTheBudgetCutLine() throws {
+            // 예산이 자른 청크를 줄 끝 자간으로 다시 나누면 남은 덜 찬 줄을 커밋하지 않고 다음 호출로
+            // 넘긴다 — 커밋하면 줄이 낱말 가운데(예산 경계)에서 끊긴다.
+            let text = Array(repeating: "aaaaa", count: 20).joined(separator: " ")
+            let attributed = try spacedParagraph(text, spacing: -20, alignment: .left)
+            let seven = widths(words: 7, ratio: -0.2)
+            let width = (seven.full + seven.lineEnd) / 2
+            let chunk = try XCTUnwrap(HwpLineBreaker.nextFrameChunk(
+                framesetter: CTFramesetterCreateWithAttributedString(attributed),
+                typesetter: CTTypesetterCreateWithAttributedString(attributed),
+                attributedString: attributed, startLocation: 0, fullLength: attributed.length,
+                remainingLineBudget: 50, lineWidth: width
+            ))
+            expect(chunk.keepCount) == 1
+            expect(chunk.nextStart) == 36
+            let first = CTLineGetStringRange(chunk.lines[0])
+            expect(first.location) == 0
+            expect(first.length) == 36
+        }
+    }
+#endif

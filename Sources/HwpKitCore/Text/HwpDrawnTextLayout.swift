@@ -341,6 +341,10 @@ public enum HwpDrawnTextLayout {
         var ascent: CGFloat = 0
         var descent: CGFloat = 0
         var leading: CGFloat = 0
+        // 판정은 줄 끝 공백까지 넣은 typographic 폭 그대로다 (#260) — 내용 폭으로 바꾸면 줄 나눔이
+        // 바뀌는 문단이 생기는데(헌법주석 렌더 387·918·971쪽: 한글이 한 줄인 387쪽은 맞고 두 줄인 918·
+        // 971쪽은 틀린다) 그 결정에 필요한 것은 폭이 아니라 한글의 줄 수다. 내용 폭은 정렬
+        // (`slightOverflowAlignmentOffset`)에만 쓴다 — 접힌 줄은 어느 쪽이든 한 줄이다.
         let naturalWidth = CGFloat(
             CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
         )
@@ -444,7 +448,9 @@ public enum HwpDrawnTextLayout {
             kCTParagraphStyleAttributeName as NSAttributedString.Key,
             at: 0, effectiveRange: nil
         ), CFGetTypeID(style as CFTypeRef) == CTParagraphStyleGetTypeID() else { return 0 }
-        let naturalWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        // 내용 폭 — 줄 끝 공백(과 매달린 양수 자간)은 정렬에 넣지 않는다. CoreText가 보통 줄을 정렬하는
+        // 폭과 같다 (#260: 넣으면 그 몫의 절반·전부만큼 왼쪽으로 밀렸다).
+        let naturalWidth = HwpLineBreaker.contentWidth(of: line)
         var alignment = CTTextAlignment.natural
         let paragraphStyle = style as! CTParagraphStyle // swiftlint:disable:this force_cast
         CTParagraphStyleGetValueForSpecifier(

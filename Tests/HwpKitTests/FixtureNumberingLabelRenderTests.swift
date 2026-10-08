@@ -144,11 +144,15 @@ final class FixtureNumberingLabelRenderTests: XCTestCase {
     /// 헌법주석: 라벨을 붙여도 절대 캐시 한 줄 문단이 두 줄로 접히지 않는다 —
     /// 쪽 수는 캐시 y로 정해져 1,030쪽 핀과 각주 예산이 이 회귀를 못 잡으므로,
     /// 라벨 문단(첫 조각)마다 그려지는 줄 수가 한글이 저장한 줄 수를 넘는 문단을
-    /// 직접 센다. 결정론 폰트(Menlo, 고정폭이라 실폰트보다 넓다)에서는 591쪽의
-    /// `(나) Keyishian v. Board of Regents…`(s23/p199) 한 문단만 걸린다 — 단 폭
-    /// 408.2pt에 라벨 포함 자연 폭 459.0pt라 slight-overflow 허용폭(6%)을 라벨만큼
-    /// 넘어 두 줄이 된다. 배포 기본(시스템 폴백)·한컴 폰트 모드에서는 0건이다
-    /// (2026-09-06 실측). 목록이 늘면 라벨 폭·거리가 실물보다 커진 회귀다.
+    /// 직접 센다. 결정론 폰트(Menlo, 고정폭이라 실폰트보다 넓다)에서는 두 문단만 걸린다.
+    /// 591쪽의 `(나) Keyishian v. Board of Regents…`(s23/p199)는 단 폭 408.2pt에 라벨 포함
+    /// 자연 폭 459.0pt라 slight-overflow 허용폭(6%)을 라벨만큼 넘어 두 줄이 된다. 267쪽의
+    /// `(다) ‘근본적 권리나 이익(fundamental rights and interests)’을…`(s12/p213)은 자연
+    /// 폭 407.5pt로 단에 들지만 줄의 마지막 글자 `우`의 자간(−5%, Menlo에 없는 한글이라 대체
+    /// 글꼴 전진량의 %)을 빼고 재면 넘친다 — 한글은 줄의 마지막 글자에 자간을 주지 않고 줄을
+    /// 맞춘다 (#260, `HwpLineBreaker`의 줄 끝 자간 생략). 한컴 폰트 모드에서는 같은 문단이
+    /// 394.95pt로 한 줄이다 (2026-10-08 실측). 배포 기본(시스템 폴백)·한컴 폰트 모드에서는
+    /// 0건이다 (2026-09-06 실측). 목록이 늘면 라벨 폭·거리가 실물보다 커진 회귀다.
     func testLegacyLabelsNeverAddLinesBeyondTheCachedSegments() async throws {
         let document = try await Self.load("legacy-common-control-property")
         let file = try CoreHwp.HwpFile(
@@ -177,7 +181,7 @@ final class FixtureNumberingLabelRenderTests: XCTestCase {
             }
         }
         expect(labelled) == 1944
-        expect(overflowing) == ["s23/p199 2>1"]
+        expect(overflowing) == ["s12/p213 2>1", "s23/p199 2>1"]
         expect(document.pages.count) == 1030
     }
 }

@@ -44,9 +44,10 @@ public enum HwpWordJustification {
             at: nsRange.location,
             effectiveRange: nil
         ) != nil
-        if !distributes, isParagraphLastLine(
+        let isLastLine = isParagraphLastLine(
             lineEnd: lineEnd, string: string, attributedString: attributedString
-        ) {
+        )
+        if !distributes, isLastLine {
             return nil
         }
         guard let style = paragraphStyle(of: attributedString, at: nsRange.location),
@@ -68,7 +69,11 @@ public enum HwpWordJustification {
         // 벌린다). 라벨도 빈칸도 없는 줄은 CT 기본 정렬 그대로다.
         let stretchRanges: [NSRange]
         if spaceOffsets.isEmpty {
-            guard excludedLabelSpaces else { return nil }
+            guard excludedLabelSpaces else {
+                return isLastLine ? nil : lineEndSpacingJustified(
+                    substring, range: nsRange, in: attributedString, targetWidth: targetWidth
+                )
+            }
             stretchRanges = interCharacterRanges(in: substring)
             guard !stretchRanges.isEmpty else {
                 return (line: CTLineCreateWithAttributedString(substring), xOffset: 0)
@@ -78,9 +83,14 @@ public enum HwpWordJustification {
         }
 
         // 자연 폭 (문단 스타일 정렬은 CTLine 단독 조판에 적용되지 않는다)
+        // 줄의 마지막 글자는 자간을 받지 않는다 (#260) — 음수 자간은 CoreText가 폭에 넣고 재므로
+        // 뺀다(양수는 tracking이라 CoreText가 줄 끝 공백처럼 이미 뺐다). 안 빼면 그 자간만큼 더 벌려
+        // 마지막 글자가 오른쪽 끝을 넘는다 (noori 양쪽 정렬 줄: 한글은 마지막 글자 + 자간 없는
+        // 전진량 = 오른쪽 끝).
         let naturalLine = CTLineCreateWithAttributedString(substring)
         let naturalWidth = CGFloat(CTLineGetTypographicBounds(naturalLine, nil, nil, nil))
             - CGFloat(CTLineGetTrailingWhitespaceWidth(naturalLine))
+            - min(0, HwpLetterSpacing.lineEndSpacing(in: attributedString, range: nsRange))
         let extra = targetWidth - naturalWidth
         guard extra > 0.25 else { return nil }
 
@@ -89,19 +99,43 @@ public enum HwpWordJustification {
             : extra / CGFloat(stretchRanges.count)
         let mutable = NSMutableAttributedString(attributedString: substring)
         let kernKey = kCTKernAttributeName as NSAttributedString.Key
+        let trackingKey = kCTTrackingAttributeName as NSAttributedString.Key
         for range in stretchRanges {
             // 기존 kern (고정 공백 폭 보정)에 가산 — 교체하면 배분이 기존
-            // kern 합만큼 상쇄되어 양쪽 정렬이 무효가 된다 (CCL 실측)
-            let existing = (mutable.attribute(kernKey, at: range.location, effectiveRange: nil)
+            // kern 합만큼 상쇄되어 양쪽 정렬이 무효가 된다 (CCL 실측). 자간을 tracking으로 실은
+            // 글자(#260)는 CoreText가 kern을 무시하므로 tracking에 더한다.
+            let key = mutable.attribute(trackingKey, at: range.location, effectiveRange: nil) != nil
+                ? trackingKey : kernKey
+            let existing = (mutable.attribute(key, at: range.location, effectiveRange: nil)
                 as? NSNumber)?.doubleValue ?? 0
             mutable.addAttribute(
-                kernKey, value: NSNumber(value: existing + Double(kernPerSpace)), range: range
+                key, value: NSNumber(value: existing + Double(kernPerSpace)), range: range
             )
         }
         return (
             line: CTLineCreateWithAttributedString(mutable),
             xOffset: distributes ? kernPerSpace / 2 : 0
         )
+    }
+
+    /// 늘릴 빈칸이 없는 줄 — CoreText가 프레임에서 글자 사이로 벌리는데, 마지막 글자의 음수 자간을 넣고
+    /// 폭을 맞추므로 마지막 글자가 오른쪽 끝을 그 자간만큼 넘는다 (#260, 실측: Apple SD 산돌고딕 Neo
+    /// 20pt 한글 자간 −3.46pt 줄을 200pt에 맞추면 마지막 글자 끝이 203.46pt). 한글은 마지막 글자에 자간을
+    /// 주지 않으므로 그 자간만큼 좁은 폭으로 다시 벌린다. 음수 자간이 아니거나 이미 넘치는 줄은 nil —
+    /// CoreText의 줄 그대로다.
+    private static func lineEndSpacingJustified(
+        _ substring: NSAttributedString, range: NSRange, in attributedString: NSAttributedString,
+        targetWidth: CGFloat
+    ) -> (line: CTLine, xOffset: CGFloat)? {
+        let spacing = HwpLetterSpacing.lineEndSpacing(in: attributedString, range: range)
+        guard spacing < 0 else { return nil }
+        let line = CTLineCreateWithAttributedString(substring)
+        let width = targetWidth + spacing
+        let content = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+            - CGFloat(CTLineGetTrailingWhitespaceWidth(line))
+        guard width > content, let justified = CTLineCreateJustifiedLine(line, 1, Double(width))
+        else { return nil }
+        return (line: justified, xOffset: 0)
     }
 
     /// 라벨 빈칸만 있는 줄의 글자 사이 벌림 자리 — 라벨 범위(`numberingLabel`)와
