@@ -19,9 +19,18 @@ extension HwpPageLayer {
     ) {
         guard let runs = CTLineGetGlyphRuns(line) as? [CTRun], !runs.isEmpty else { return }
 
+        // 음영·실선 장식은 줄마다 색별 **한 경로**로 칠한다 — run마다 따로 칠하면 소수 좌표에서
+        // 맞닿은 사각형 사이에 안티에일리어싱 이음매가 남는다(같은 색 두 사각형이 경계 픽셀을
+        // 반씩 덮으면 그 열이 25% 옅다). 자간(#260)이 글자마다 kern·tracking 값을 달리해 라틴 글자열이
+        // 글자 하나씩 run으로 갈리면서 이음매가 글자마다 생기게 됐다.
+        // 줄 끝 글자에 매달린 양수 자간 몫은 장식하지 않는다 (`lineEndTrackingClip`).
+        let clipMaxX = lineEndTrackingClip(of: line, runs: runs, lineOrigin: origin)
+        var shades = SolidFillBatch(clipMaxX: clipMaxX)
         for run in runs {
-            drawShadeIfNeeded(run, lineOrigin: origin, in: ctx)
+            collectShade(run, lineOrigin: origin, into: &shades)
         }
+        shades.fill(in: ctx)
+        drawMemoAnchorBrackets(of: runs, lineOrigin: origin, clipMaxX: clipMaxX, in: ctx)
 
         let needsPerRunDrawing = runs.contains { run in
             let attributes = runAttributes(run)
@@ -60,27 +69,70 @@ extension HwpPageLayer {
         let strikethroughFonts = msWordStrikethroughFonts(of: runs)
         // 점선·물결 같은 선 모양(#191)은 글자 모양 run(같은 `charShapeId`의 잇닿은 run)
         // 단위로 패턴을 편다 — 그 묶음의 첫 run만 span을 받고 나머지는 nil이다.
-        let shapeSpans = lineShapeSpans(of: runs, lineOrigin: origin)
+        let shapeSpans = lineShapeSpans(of: runs, lineOrigin: origin, clipMaxX: clipMaxX)
+        // 칠하는 차례는 run마다 그리던 종전 순서(글자 모양 선 → 강조점 → 삽입 밑줄 → 탭 채움)를
+        // 지킨다 — 실선을 줄 끝에 한꺼번에 칠하면 강조점·탭 채움 위를 덮는다.
+        var solidLines = SolidFillBatch(clipMaxX: clipMaxX)
         for (index, run) in runs.enumerated() {
             // 밑줄은 CT 대신 항상 직접 (CT 밑줄은 폰트 지표 위치·두께라 실물과 갈린다)
             drawUnderlineIfNeeded(
                 run, lineOrigin: origin, reference: underlineReference,
-                shapeSpan: shapeSpans[index], in: ctx
+                shapeSpan: shapeSpans[index], solidLines: &solidLines, in: ctx
             )
             drawAboveUnderlineIfNeeded(
                 run, lineOrigin: origin, reference: underlineReference,
-                shapeSpan: shapeSpans[index], in: ctx
+                shapeSpan: shapeSpans[index], solidLines: &solidLines, in: ctx
             )
             drawStrikethroughIfNeeded(
                 run, lineOrigin: origin, msWordFont: strikethroughFonts[index],
-                shapeSpan: shapeSpans[index], in: ctx
+                shapeSpan: shapeSpans[index], solidLines: &solidLines, in: ctx
             )
+        }
+        solidLines.fill(in: ctx)
+        var insertLines = SolidFillBatch(clipMaxX: clipMaxX)
+        for run in runs {
             drawEmphasisIfNeeded(run, lineOrigin: origin, in: ctx)
             drawTrackInsertUnderlineIfNeeded(
-                run, lineOrigin: origin, reference: underlineReference, in: ctx
+                run, lineOrigin: origin, reference: underlineReference,
+                solidLines: &insertLines, in: ctx
             )
+        }
+        insertLines.fill(in: ctx)
+        for run in runs {
             drawTabLeaderIfNeeded(run, lineOrigin: origin, in: ctx)
         }
+    }
+
+    /// 줄 끝 글자의 양수 자간이 끝나는 장식 경계 x (#260) — 없으면 nil.
+    ///
+    /// 한글은 줄의 마지막 글자에 자간을 주지 않는다(`HwpLetterSpacing.lineEndSpacing`). 양수 자간은
+    /// tracking이라 CoreText가 줄 끝 공백처럼 매달아 줄 나눔·정렬에서는 빼지만 글자 진행 폭에는 남아,
+    /// run 경계로 재는 음영·밑줄·취소선이 그 몫만큼 글자 뒤로 뻗는다(오른쪽 정렬 줄은 오른쪽 여백
+    /// 밖으로). 줄이 **공백 없이** 그 글자로 끝날 때만 자른다 — 폭 0 run(문단·줄 끝 표식) 뒤의
+    /// 마지막 run이 tracking을 지니고, 줄 끝 공백 폭(`CTLineGetTrailingWhitespaceWidth`, 매달린 그
+    /// 몫을 낸다)이 그 값과 같을 때다. 그 run이 시각상 마지막(왼쪽에서 오른쪽)이어야 x 하나로 자를 수
+    /// 있다. 뒤에 빈칸이 오는 줄은 빈칸 밑의 선까지 자르게 되므로 그대로 둔다.
+    func lineEndTrackingClip(of line: CTLine, runs: [CTRun], lineOrigin: CGPoint) -> CGFloat? {
+        let trailing = CGFloat(CTLineGetTrailingWhitespaceWidth(line))
+        guard trailing > 0 else { return nil }
+        // 줄마다 불리므로 run 폭은 끝에서부터 필요한 만큼만 잰다.
+        let whole = CFRange(location: 0, length: 0)
+        func isVisible(_ run: CTRun) -> Bool {
+            CTRunGetTypographicBounds(run, whole, nil, nil, nil) > 0
+        }
+        guard let last = runs.last(where: isVisible),
+              !CTRunGetStatus(last).contains(.rightToLeft),
+              let tracking = runAttributes(last)[kCTTrackingAttributeName as NSAttributedString.Key]
+              as? NSNumber
+        else { return nil }
+        let hang = CGFloat(tracking.doubleValue)
+        guard hang > 0, abs(hang - trailing) < 0.01 else { return nil }
+        // 시각상 마지막 run이 논리상으로도 마지막 보이는 run이어야 한다 (양방향 줄).
+        let location = CTRunGetStringRange(last).location
+        guard !runs.contains(where: {
+            CTRunGetStringRange($0).location > location && isVisible($0)
+        }) else { return nil }
+        return runBounds(of: last, lineOrigin: lineOrigin).maxX - hang
     }
 
     /// 이 run이 MS 워드 호환 문서의 것인지 — 조판이 한글 문서가 아닌 문서의 모든 run에
@@ -210,57 +262,6 @@ extension HwpPageLayer {
         CTRunGetAttributes(run) as? [NSAttributedString.Key: Any] ?? [:]
     }
 
-    /// 음영 배경 (글리프보다 먼저). 메모 앵커는 둥근 녹색 테두리도 두른다
-    /// (한글.app 실물 — memo 픽스처 앵커 괄호).
-    func drawShadeIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
-        let attributes = runAttributes(run)
-        guard let shade = attributes[HwpAttributedStringKey.shadeColor] else { return }
-        let typographic = runBounds(of: run, lineOrigin: lineOrigin)
-        // 실물 음영 상자는 정확히 1em — run의 typographic ascent가 아니라
-        // 글리프에 밀착한 em 박스다 (라운드 7 실측: 상하 각 1px 여유)
-        let size = runFont(attributes).map(CTFontGetSize) ?? typographic.height
-        let bounds = CGRect(
-            x: typographic.minX,
-            y: lineOrigin.y - size * 0.15,
-            width: typographic.width,
-            height: size
-        )
-        ctx.setFillColor(shade as! CGColor) // swiftlint:disable:this force_cast
-        ctx.fill(bounds)
-        if let stroke = attributes[HwpAttributedStringKey.memoAnchorStroke] {
-            // 실물: 범위 양 끝의 둥근 괄호 쌍 — 여는 쪽은 옅고 닫는 쪽이
-            // 진하다 (라운드 10 실측)
-            func bracket(atX x: CGFloat, cornerX: CGFloat) -> CGPath {
-                let path = CGMutablePath()
-                let radius: CGFloat = 1.2
-                path.move(to: CGPoint(x: cornerX, y: bounds.minY))
-                path.addArc(
-                    tangent1End: CGPoint(x: x, y: bounds.minY),
-                    tangent2End: CGPoint(x: x, y: bounds.minY + radius),
-                    radius: radius
-                )
-                path.addLine(to: CGPoint(x: x, y: bounds.maxY - radius))
-                path.addArc(
-                    tangent1End: CGPoint(x: x, y: bounds.maxY),
-                    tangent2End: CGPoint(x: cornerX, y: bounds.maxY),
-                    radius: radius
-                )
-                return path
-            }
-            let strokeColor = stroke as! CGColor // swiftlint:disable:this force_cast
-            ctx.saveGState()
-            ctx.setLineCap(.round)
-            ctx.setStrokeColor(strokeColor)
-            ctx.addPath(bracket(atX: bounds.maxX, cornerX: bounds.maxX - 1.2))
-            ctx.setLineWidth(0.9)
-            ctx.strokePath()
-            ctx.addPath(bracket(atX: bounds.minX, cornerX: bounds.minX + 1.2))
-            ctx.setLineWidth(0.55)
-            ctx.strokePath()
-            ctx.restoreGState()
-        }
-    }
-
     /// run 하나를 그림자/양각 설정과 함께 그린다
     func drawRun(_ run: CTRun, origin: CGPoint, in ctx: CGContext) {
         let attributes = runAttributes(run)
@@ -358,6 +359,7 @@ extension HwpPageLayer {
         var advances = [CGSize](repeating: .zero, count: glyphCount)
         CTRunGetPositions(run, CFRange(location: 0, length: 0), &positions)
         CTRunGetAdvances(run, CFRange(location: 0, length: 0), &advances)
+        let textMatrix = CTRunGetTextMatrix(run)
         var ascent: CGFloat = 0
         var descent: CGFloat = 0
         var leading: CGFloat = 0
@@ -376,7 +378,8 @@ extension HwpPageLayer {
                 run, nil, CFRange(location: index, length: 1)
             )
             guard !bounds.isNull, bounds.width > 0.1 else { continue }
-            let centerX = lineOrigin.x + positions[index].x + advance / 2
+            // 위치는 매트릭스(장평) 적용 전 좌표다 (`runBounds`와 같은 이유).
+            let centerX = lineOrigin.x + positions[index].applying(textMatrix).x + advance / 2
             // 실물: 점 중심이 글리프 잉크 상단에서 ~0.26em (라운드 11 실측
             // — CT ascent 기준 배치는 0.2em 더 높았다)
             let dotY = lineOrigin.y + bounds.maxY + (ascent + descent) * 0.13
@@ -401,6 +404,7 @@ extension HwpPageLayer {
         _ run: CTRun,
         lineOrigin: CGPoint,
         reference: HwpDecorationLineGeometry.UnderlineReference,
+        solidLines: inout SolidFillBatch,
         in ctx: CGContext
     ) {
         let attributes = runAttributes(run)
@@ -414,7 +418,7 @@ extension HwpPageLayer {
                 shape: .line, placement: .underlineBelow,
                 scale: underlineShapeScale(attributes, reference: reference), span: nil
             ),
-            in: ctx
+            solidLines: &solidLines, in: ctx
         )
     }
 
@@ -461,6 +465,7 @@ extension HwpPageLayer {
         lineOrigin: CGPoint,
         msWordFont: CTFont?,
         shapeSpan: CGRect?,
+        solidLines: inout SolidFillBatch,
         in ctx: CGContext
     ) {
         let attributes = runAttributes(run)
@@ -484,7 +489,7 @@ extension HwpPageLayer {
                 placement: .strikethrough, scale: strikethroughShapeScale(attributes),
                 span: shapeSpan
             ),
-            in: ctx
+            solidLines: &solidLines, in: ctx
         )
     }
 
@@ -514,13 +519,14 @@ extension HwpPageLayer {
         lineOrigin: CGPoint,
         reference: HwpDecorationLineGeometry.UnderlineReference,
         shapeSpan: CGRect?,
+        solidLines: inout SolidFillBatch,
         in ctx: CGContext
     ) {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.underlineStyle] != nil else { return }
         fillUnderline(
             run, lineOrigin: lineOrigin, placement: .underlineBelow, reference: reference,
-            span: shapeSpan, in: ctx
+            span: shapeSpan, solidLines: &solidLines, in: ctx
         )
     }
 
@@ -547,13 +553,14 @@ extension HwpPageLayer {
         lineOrigin: CGPoint,
         reference: HwpDecorationLineGeometry.UnderlineReference,
         shapeSpan: CGRect?,
+        solidLines: inout SolidFillBatch,
         in ctx: CGContext
     ) {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.underlineAboveStyle] != nil else { return }
         fillUnderline(
             run, lineOrigin: lineOrigin, placement: .underlineAbove, reference: reference,
-            span: shapeSpan, in: ctx
+            span: shapeSpan, solidLines: &solidLines, in: ctx
         )
     }
 
@@ -585,6 +592,7 @@ extension HwpPageLayer {
         placement: HwpLineShapeGeometry.Placement,
         reference: HwpDecorationLineGeometry.UnderlineReference,
         span: CGRect?,
+        solidLines: inout SolidFillBatch,
         in ctx: CGContext
     ) {
         let attributes = runAttributes(run)
@@ -600,7 +608,7 @@ extension HwpPageLayer {
                 placement: underlineShapePlacement(placement, reference: reference),
                 scale: underlineShapeScale(attributes, reference: reference), span: span
             ),
-            in: ctx
+            solidLines: &solidLines, in: ctx
         )
     }
 
@@ -613,19 +621,21 @@ extension HwpPageLayer {
         line: HwpDecorationLineGeometry.Line,
         color: Any?,
         shaped: ShapedLine,
+        solidLines: inout SolidFillBatch,
         in ctx: CGContext
     ) {
-        setDecorationFillColor(color, in: ctx)
         guard shaped.shape != .line else {
+            // 실선은 줄의 색별 경로에 모아 한 번에 칠한다 (`SolidFillBatch` — 이음매 없음).
             let bounds = runBounds(of: run, lineOrigin: lineOrigin)
-            ctx.fill(CGRect(
+            solidLines.add(CGRect(
                 x: bounds.minX,
                 y: lineOrigin.y + line.center - line.thickness / 2,
                 width: bounds.width,
                 height: line.thickness
-            ))
+            ), color: color)
             return
         }
+        setDecorationFillColor(color, in: ctx)
         fillShapedLine(line: line, lineOrigin: lineOrigin, shaped: shaped, in: ctx)
     }
 
@@ -657,6 +667,11 @@ extension HwpPageLayer {
         if CTRunGetGlyphCount(run) > 0 {
             CTRunGetPositions(run, CFRange(location: 0, length: 1), &position)
         }
+        // run 위치는 글꼴 매트릭스(장평) **적용 전** 좌표다 — 장평 50% run이 줄 24pt 자리에서
+        // 시작하면 48pt로 읽힌다(실측). 렌더러가 `CTRunGetTextMatrix`로 글리프를 그리는 것과 같은
+        // 매트릭스를 씌운다(`HwpDrawnTextLayoutHyperlinkRects`와 같은 사실). 줄 머리 run(0)과 장평
+        // 100% run은 종전과 같다 — 자간(#260)으로 장평 글자열이 글자마다 run으로 갈리며 드러났다.
+        position = position.applying(CTRunGetTextMatrix(run))
         return CGRect(
             x: lineOrigin.x + position.x,
             y: lineOrigin.y - descent,
