@@ -1558,7 +1558,7 @@ run 블록 #165와 같은 표) 각주 이어짐의 본문 하한(`footnoteBodyBo
       묶음(빈칸·폭 0 글자)에는 tracking을 달지 않고, 빈칸 폭 패스가 kern으로 폭을 준다. 양쪽 정렬의 글자 사이
       벌림(`HwpWordJustification`)도 tracking이 있는 글자에는 tracking에 더한다.
     - **자간 표식**(`HwpAttributedStringKey.letterSpacing` — 자간 비율)은 chunk 기본 사전에 한 번만 싣는다. 자간을
-      실은 kern이 빈칸 폭·컨트롤 치환의 kern과 구별되지 않아 줄 끝 자간을 읽는 쪽(`lineEndSpacing`)이 이 표식이
+      실은 kern이 빈칸 폭·컨트롤 치환의 kern과 구별되지 않아 줄 끝 자간을 읽는 쪽(`lineEnd`)이 이 표식이
       있는 글자에서만 tracking(없으면 kern)을 읽는다. 묶음마다 속성을 둘 이상 고치면 조판 문자열 생성·속성
       열거가 그만큼 느려지므로(아래 성능) 묶음마다는 운반 속성 하나만 더하고, 묶음이 하나뿐인 chunk(한글
       낱말)는 가변 문자열을 거치지 않는다.
@@ -1586,7 +1586,7 @@ run 블록 #165와 같은 표) 각주 이어짐의 본문 하한(`footnoteBodyBo
     조판한 첫 run의 글꼴·폭을 쓴다(`missesTrailingGlyph`·`shapedFallback`). 대체 글꼴 캐시의 열쇠는 묶음의
     **UTF-16 단위열**이다 — `String ==`은 정준 동치라 U+2329·U+3008처럼 글리프가 다를 수 있는 글자를 한 항목으로
     접는다.
-  - **줄의 마지막 글자는 자간을 받지 않는다** (`HwpLetterSpacing.lineEndSpacing`). 한글은 줄 맞춤·
+  - **줄의 마지막 글자는 자간을 받지 않는다** (`HwpLetterSpacing.lineEnd`·`lineEndExcess`). 한글은 줄 맞춤·
     오른쪽·가운데·양쪽·배분 정렬을 모두 마지막 내용 글자(뒤 공백 제외)를 자간 없는 전진량으로 잰다
     (실측: Menlo 20pt `abcd` 라틴 ±20% 오른쪽 정렬의 `d`가 오른쪽 끝 − 12.00pt; 왼쪽 여백으로 줄 폭을 0.5pt씩
     바꾼 `aaaaa` 표본의 첫 줄 나눔 경계가 −20%·−5%·+20% 모두 이 모델과 일치하고 정렬과 무관; #249 `lines`
@@ -1594,13 +1594,25 @@ run 블록 #165와 같은 표) 각주 이어짐의 본문 하한(`footnoteBodyBo
     0.5pt 간격으로 R1 창 안팎에 둔 57표본(Apple SD 산돌고딕 Neo 20pt −20%·함초롬바탕 20pt −20%·헌법주석 각주와
     같은 함초롬바탕 9pt 장평 95% −5%, `probes/260` hfit)의 첫 줄 음절 수가 전부 이 모델과 같다(생략 없이 재면
     33/57). 양수 자간은 tracking이라 CoreText가 줄 끝에서 매달리는 공백
-    처럼 빼고 재므로 이미 같고, **음수만** 손을 쓴다: 줄바꿈 코어(`HwpLineBreaker.lineEndSpacingRefit`)가
-    그 자간을 빼고 재면 넘치는 줄을 다시 나누고(이 절의 "측정·렌더 공유 줄바꿈 코어" 계약 5), 오른쪽·
-    가운데 정렬 origin(`lineEndSpacingAligned`)과 양쪽 정렬 자연 폭(`HwpWordJustification`)이 그 자간을
-    뺀다. 한 줄 허용(`HwpDrawnTextLayout.slightOverflowLineMetrics`)의 **정렬 오프셋**은 CoreText가 보통 줄을
-    정렬하는 **내용 폭**(`HwpLineBreaker.contentWidth` — 줄 끝 공백과 매달린 양수 tracking을 뺀 폭)으로 잰다 —
-    종전 typographic 폭은 그 몫의 절반(가운데)·전부(오른쪽)만큼 줄을 왼쪽으로 밀었다(헌법주석 렌더 484·485쪽
-    표 셀의 가운데 정렬 줄: `(헌법제3호)`의 잉크 중심이 한글 PDF보다 2.42pt 왼쪽 → 0.42pt). **판정**은
+    처럼 빼고 재므로 이미 같고, CoreText가 줄 폭에 **넣고 잰** 몫(`lineEndExcess` — 음수, 그리고 뒤에 폭 0 컨트롤
+    표식이 있어 매달지 못한 양수)만 손을 쓴다: 줄바꿈 코어(`HwpLineBreaker.lineEndSpacingRefit`)가
+    음수 몫을 빼고 재면 넘치는 줄을 다시 나누고(이 절의 "측정·렌더 공유 줄바꿈 코어" 계약 5), 오른쪽·
+    가운데 정렬 origin(`lineEndSpacingAligned`)과 양쪽 정렬 자연 폭(`HwpWordJustification`)이 그 몫을
+    뺀다. **줄 끝의 폭 0 컨트롤 표식(필드 끝·책갈피 등)은 없는 것으로 본다** (#260 리뷰 실측, 한글 12.30 build
+    6523: 라틴 ±20% 오른쪽 정렬 `abcd` 뒤에 하이퍼링크 끝·책갈피를 둬도 `d`가 표식 없는 문단과 같은 498.24pt,
+    줄 폭 387.5pt의 −20% `aaaaa` 줄 나눔도 링크 유무와 같은 6단어) — 그 앞 글자가 마지막 글자다
+    (`isZeroWidthControlMarker` — `controlIndex`가 있고 `inlineObjectHeight`가 없는 U+FFFC; 글자처럼 취급 개체는
+    내용 글자다). 양수 자간은 그 표식에 막혀 CoreText가 매달지 못하므로 그 몫도 정렬·양쪽 정렬이 뺀다.
+    **CoreText는 10,240 UTF-16 단위를 넘는 문자열의 kern·tracking을 통째로 무시한다** (실측 — 10,240자는
+    적용, 10,241자부터 글자마다·일정 kern·tracking 모두 0; `coreTextSpacingLengthLimit`). 그런 문단은 자간 없이
+    그려지므로 줄 끝 보정도 하지 않는다 — 하면 적용되지 않은 자간을 빼서 들어가는 줄을 나눈다. 그런 문단이
+    자간을 잃는 것 자체는 main부터의 별건이다. 한 줄 허용(`HwpDrawnTextLayout.slightOverflowLineMetrics`)의
+    **정렬 오프셋**은 CoreText가 보통 줄을 정렬하는 **내용 폭**(`HwpLineBreaker.contentWidth` — 줄 끝 공백과
+    매달린 양수 tracking을 뺀 폭)에서 줄 끝 자간 몫(`lineEndExcess`)을 뺀 폭으로 잰다(그 몫을 뺀 폭이 줄에 들 때만 —
+    보통 줄의 `lineEndSpacingAligned`와 같은 조건이라, 글꼴 차로 정말 넘치는 줄은 그대로다) — 종전 typographic 폭은
+    그 몫의 절반(가운데)·전부(오른쪽)만큼 줄을 왼쪽으로 밀었다(헌법주석 렌더 484·485쪽 표 셀의 가운데 정렬 줄:
+    `(헌법제3호)`의 잉크 중심이 한글 PDF보다 2.42pt 왼쪽 → 0.42pt), 줄 끝 자간 몫을 빼지 않으면 줄 끝 빈칸
+    하나로 이 경로에 들어온 줄이 보통 줄보다 자간만큼 튀었다(#260 리뷰). **판정**은
     typographic 폭 그대로다 — 내용 폭(또는 마지막 글자의 음수 자간을 되돌린 폭)으로 바꾸면 허용 창에 드나드는
     문단이 생기는데, 헌법주석에서 한글이 한 줄인 387쪽 각주는 맞게 되고 한글이 두 줄인 918·971쪽 각주는
     틀리게 되어(main은 387쪽을 두 줄로 겹쳐 그리고 971쪽을 한 줄로 접는다) 순효과가 없었다. 그 판정에 필요한
@@ -1608,7 +1620,11 @@ run 블록 #165와 같은 표) 각주 이어짐의 본문 하한(`footnoteBodyBo
     빈칸이 없어 CoreText 프레임 정렬을 그대로 쓰는 양쪽 정렬 줄
     (한글·한자 연속)은 CoreText가 마지막 글자의 음수 자간을 넣고 폭을 맞춰 그 글자가 오른쪽 끝을 자간만큼
     넘으므로(Apple SD 산돌고딕 Neo 20pt −3.46pt 줄의 마지막 글자 끝 203.46/200pt) 그만큼 좁은 폭으로 다시
-    맞춘다(`lineEndSpacingJustified`, 문단 마지막 줄은 CoreText도 맞추지 않으므로 제외). 줄 끝 공백 판정
+    맞춘다(`lineEndSpacingJustified`, 문단 마지막 줄은 CoreText도 맞추지 않으므로 제외). 빈칸이 있는 줄도
+    남는 폭이 0.25pt 이하이면 종전에는 CoreText 프레임 줄을 그대로 그려 마지막 글자가 자간만큼 넘쳤다(#260 리뷰
+    실측: −5–−50% 줄의 1.2–1.7%) — 줄 끝 자간 몫이 있으면 작은 여분이라도 빈칸에 나눈다. 양쪽 정렬이 재는
+    줄 끝 자간 몫은 그 줄의 부분 문자열에서 잰다 — 다시 그리는 줄이 그것이라 긴 문단에서도 자간이 실린다.
+    줄 끝 공백 판정
     (`isLineEndWhitespace`)은 CoreText가 매다는 집합과 같다 — 탭·줄 나눔·문단 구분과 유니코드 공백(Zs: 묶음
     빈칸 U+00A0·전각 빈칸 U+3000·U+2009 등). 묶음 빈칸을 내용 글자로 보면 빈칸 폭 kern을 자간으로 읽었다.
   - **문단 머리·컨트롤 글자는 측정한 대로 갈린다** (같은 실측): 문단 번호 라벨은 자간을 받되 **라벨의
@@ -1643,9 +1659,11 @@ run 블록 #165와 같은 표) 각주 이어짐의 본문 하한(`footnoteBodyBo
     드는지 미확인), 글머리표 기호와 본문 사이 거리(한글은 정의의 본문과의 거리 50% = 10pt, 우리는 기호 뒤
     빈칸 글꼴 폭).
   - 가드: `HwpLetterSpacingTests`(묶음·대체 글꼴·운반 속성 선택·앞 빈칸·혼용 = tracking 등가(macOS·iOS 공통
-    글꼴)·줄 끝 자간·라벨·글머리표·각주 번호)·`HwpLetterSpacingEdgeCaseTests`(줄 끝 Zs 공백·캐시 열쇠·뒤 단위만
-    없는 묶음·방점·첫가끝 초성 묶음)·`HwpKerningCoverageTests`(kern·GPOS·GSUB 합성 표·공유 오프셋 조작 표·작업
-    예산과 시스템 글꼴)·`HwpLineEndSpacingTests`(줄 끝 재조판·예산 절단·정렬·빈칸 없는 양쪽 정렬·한 줄 허용)·`HwpSpaceWidthTests`(빈칸 자간)·`FixtureLetterSpacingTests`
+    글꼴)·줄 끝 자간·라벨(한글 마지막 글자의 kern 운반 속성)·글머리표·각주 번호·문서 캐시의 커닝 집합 1회
+    조회)·`HwpLetterSpacingEdgeCaseTests`(줄 끝 Zs 공백·컨트롤 표식·10,240자 상한·캐시 열쇠·뒤 단위만 없는 묶음·방점·
+    첫가끝 초성 묶음)·`HwpKerningCoverageTests`(kern·GPOS·GSUB 합성 표·공유 오프셋 조작 표(중복 방문 시 예산 초과)·
+    넓은 범위의 낱말 단위 예산·유형이 다른 룩업의 공유 부분표·시스템 글꼴)·`HwpLineEndSpacingTests`(줄 끝
+    재조판·들여쓴 탭 줄의 줄 머리 자리·창 단위 재조판·예산 절단·정렬·빈칸 없는/여분 작은 양쪽 정렬·한 줄 허용)·`HwpSpaceWidthTests`(빈칸 자간)·`FixtureLetterSpacingTests`
     (`letter-spacing` 쌍, 한글 PDF 글자 원점 0.25pt + 글자당 0.01pt 안 + 줄 맞춤 두 문단의 줄 나눔)·
     `HwpSelectionRTFTests`
     (RTF 복사가 tracking을 kern으로 옮긴다)
@@ -1724,9 +1742,16 @@ height는 잉크 모델이다.
    청크를 쪼개면 정상 문단이 호출 한 번에 덮인다는 전제(아래 3-way 대조, 측정·렌더 루프의 "단일 청크"
    주석)가 깨진다 — 실제로 첫 구현이 그랬다(측정 19줄 ≠ 공유 코어 6줄). 이어 붙인 줄의 origin은 각
    프레임의 것이다(문단 중간에서 시작하는 프레임도 CoreText가 이어지는 줄 들여쓰기를 준다 — 실측).
-   예산 절단·미완 줄 이월은 마지막 프레임에 같은 규칙으로 건다 — 예산이 자른 청크의 이어 붙인 프레임이 한
-   줄뿐이면 그 줄은 덜 찬 줄이라 커밋하지 않고 다음 호출로 넘긴다(커밋하면 예산 경계, 곧 낱말 가운데에서
-   끊긴다; `testRefitDoesNotCommitTheBudgetCutLine`). 더 짧게 나눌 수 없는 줄은 그대로 둔다.
+   **고친 줄 뒤는 창 단위로 다시 조판한다** (#260 리뷰) — 고친 줄마다 문단의 나머지를 통째로 조판하면 고칠 줄
+   수 × 문단 길이라 이차였다(한글 음절 4만 자 −10% 문단 3.2초 대 0.38초, −50%면 거의 모든 줄을 고친다). 고친
+   줄 길이의 8배(256…4,096자) 창만 조판해 마지막(창 끝에서 잘렸을 수 있는) 줄을 빼고 잇는다 — CoreText의 줄
+   나눔은 줄 시작부터 탐욕적이라 창 안 앞 줄들은 나머지 전체를 조판했을 때와 같다(`testLongParagraphRefitMatchesLineByLine`).
+   다시 나눌 길이는 **실제 줄 머리 자리**에서 잰다(`CTTypesetter…WithOffset`) — CoreText의 탭 자리가 프레임
+   왼쪽 끝 기준이라, 들여쓴 문단의 탭 줄을 0에서 재면 한 낱말 일찍 나눴다(`testRefitMeasuresIndentedTabLinesAtTheirOffset`).
+   예산 절단·미완 줄 이월은 청크 끝에 닿는 창에 같은 규칙으로 건다 — 그 창의 줄이 하나뿐이면 덜 찬 줄이라
+   커밋하지 않고 다음 호출로 넘긴다(커밋하면 예산 경계, 곧 낱말 가운데에서 끊긴다;
+   `testRefitDoesNotCommitTheBudgetCutLine`). 더 짧게 나눌 수 없는 줄은 그대로 둔다. 코드는
+   `Text/HwpLineBreakerLineEnd.swift`(타입 본문 길이 한도 때문에 확장으로 갈랐다).
 
 가드는 두 층이다.
 
@@ -1951,7 +1976,8 @@ paraShape와 같은 값**이어야 한다.
   #164로 되돌아간다. 계약 고정: `testWideToNarrowCarryoverKeepsTheObjectOnItsDrawnMarkerLine`·
   `HwpMeasuredLineFragmentRemeasureTests`
 - 양쪽 정렬은 draw 시 한글처럼 남는 폭을 공백에만 배분해 재조판한다
-  (`Text/HwpWordJustification` — 공백 없는 줄/마지막 줄은 CT 기본).
+  (`Text/HwpWordJustification` — 공백 없는 줄/마지막 줄은 CT 기본, 단 공백 없는 줄의 줄 끝 자간
+  몫은 그만큼 좁게 다시 맞춘다 — #260).
   측정 (HwpParagraphLayout)은 CT justified 그대로 — 줄바꿈은 동일하다.
   **측정·렌더가 갈리는 지점은 이 재조판 하나뿐이다** (줄바꿈 코어 자체는
   위 "측정·렌더 공유 줄바꿈 코어" 참조). 그래서 두 경로의 줄 **범위**는
