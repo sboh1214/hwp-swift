@@ -164,17 +164,67 @@ import XCTest
         }
 
         func testSharedOffsetsAreWalkedOnce() {
-            // 조작된 표: 룩업 65,535개가 모두 같은 자리를 가리키고, 그 자리는 룩업 목록 자신과 겹친다 —
-            // 값이 전부 2라 유형 2(짝 조정)·부분표 2개(같은 자리)·범위 커버리지 [2, 2]로 읽힌다. 한 번만
-            // 훑으면 곧바로 끝나고, 자리마다 다시 훑으면 65,535² 번이다.
+            // 조작된 표: 룩업 1,000개가 한 룩업을, 그 룩업의 부분표 1,000개가 한 부분표(단일 조정, 커버리지
+            // 2글리프)를 가리킨다. 한 번만 훑으면 약 2,000 항목이고, 자리마다 다시 훑으면 1,000 × (1,000 +
+            // 1,000 × 2) = 3,000,000 항목으로 예산(2^20)을 넘어 nil(전체 글리프)이 된다.
+            let count = 1000
             var table = Bytes()
             table.u16(1, 0, 0, 0, 10)
-            table.u16(0xFFFF)
-            for _ in 0 ..< 0xFFFF {
-                table.u16(2)
+            table.u16(count)
+            for _ in 0 ..< count {
+                table.u16(2 + 2 * count) // 룩업 목록 바로 뒤의 한 룩업
             }
+            table.u16(1, 0, count) // 유형 1(단일 조정)·플래그·부분표 수
+            for _ in 0 ..< count {
+                table.u16(6 + 2 * count) // 룩업 머리 바로 뒤의 한 부분표
+            }
+            table.u16(1, 6, 0) // 형식 1·커버리지 6·값 형식 0
+            table.data.append(Self.coverage1([10, 11]))
             let set = HwpKerningCoverage.parse(kern: nil, kerx: nil, gpos: table.data)
-            expect(Self.members(set)) == [2]
+            expect(Self.members(set)) == [10, 11]
+        }
+
+        func testWideCoverageRangesSpendTheirWords() {
+            // 범위 기록 하나는 채우는 낱말(64글리프) 수만큼 예산을 쓴다 — 0…65535 범위 1,100개는 기록 수로는
+            // 1,100이지만 낱말로는 1,126,400이라 예산(2^20)을 넘어 해석을 포기한다(nil = 전체 글리프).
+            var single = Bytes()
+            single.u16(1, 6, 0)
+            single.u16(2, 1100)
+            for _ in 0 ..< 1100 {
+                single.u16(0, 0xFFFF, 0)
+            }
+            let gpos = Self.layoutTable([(1, single.data)])
+            expect(HwpKerningCoverage.parse(kern: nil, kerx: nil, gpos: gpos) == nil) == true
+            // 대조군: 같은 기록 수의 좁은 범위는 예산 안이다.
+            var narrow = Bytes()
+            narrow.u16(1, 6, 0)
+            narrow.u16(2, 1100)
+            for _ in 0 ..< 1100 {
+                narrow.u16(3, 4, 0)
+            }
+            let narrowSet = HwpKerningCoverage.parse(
+                kern: nil, kerx: nil, gpos: Self.layoutTable([(1, narrow.data)])
+            )
+            expect(Self.members(narrowSet)) == [3, 4]
+        }
+
+        func testSubtableSharedAcrossLookupTypesIsReadForEach() {
+            // 건너뛰는 유형(GSUB 1)의 룩업과 모으는 유형(GSUB 4)의 룩업이 같은 부분표 바이트를 가리킨다 —
+            // `[0001][커버리지][합자 집합 수][오프셋]`은 단일 치환 형식 1로도 합자 치환 형식 1로도 읽힌다.
+            // 룩업 순서와 무관하게 합자 시작 글리프가 들어야 한다.
+            for types in [[1, 4], [4, 1]] {
+                var table = Bytes()
+                table.u16(1, 0, 0, 0, 10)
+                table.u16(2, 6, 14) // 룩업 둘 (목록 기준 6·14)
+                table.u16(types[0], 0, 1, 16) // 룩업 A — 부분표는 목록 기준 22
+                table.u16(types[1], 0, 1, 8) // 룩업 B — 같은 자리
+                table.u16(1, 8, 1, 10) // 형식 1·커버리지 8·합자 집합 1·오프셋
+                table.data.append(Self.coverage1([41]))
+                let set = HwpKerningCoverage.parse(
+                    kern: nil, kerx: nil, gpos: nil, gsub: table.data
+                )
+                expect(Self.members(set)).to(equal([41]), description: "\(types)")
+            }
         }
 
         func testWorkBudgetGivesUpAsEveryGlyph() {

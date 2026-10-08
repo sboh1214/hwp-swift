@@ -89,9 +89,12 @@ enum HwpKerningCoverage {
             return work <= Self.maximumWork
         }
 
-        /// `kind`(0 룩업·1 부분표·2 커버리지)의 `offset`을 처음 보는가.
-        mutating func firstVisit(_ offset: Int, kind: Int) -> Bool {
-            visited.insert(offset << 2 | kind).inserted
+        /// `kind`(0 룩업·1 부분표·2 커버리지)의 `offset`을 처음 보는가. 부분표는 `type`(확장을 푼
+        /// 룩업 유형)도 열쇠에 든다 — OpenType은 룩업끼리 부분표 자리를 나눠 쓸 수 있어, 건너뛰는
+        /// 유형(GSUB 1–3·GPOS 4–8)의 룩업이 먼저 같은 바이트를 방문하면 그 자리를 모으는 유형으로 읽는
+        /// 룩업이 건너뛰어져 커버리지가 빠졌다 (#260 리뷰 — 결과가 룩업 순서에 달렸다).
+        mutating func firstVisit(_ offset: Int, kind: Int, type: UInt16 = 0) -> Bool {
+            visited.insert((offset << 4 | Int(type & 0xF)) << 2 | kind).inserted
         }
     }
 
@@ -101,6 +104,13 @@ enum HwpKerningCoverage {
     /// 문서마다 다른 값이 아니다(`HwpTextAttributeCache`의 문서 단위 소유와 다르다).
     static func glyphs(of font: CTFont) -> GlyphSet? {
         FontCache.shared.glyphs(of: font)
+    }
+
+    /// 테스트 전용 관측 지점 — 전역 캐시 조회 수(`glyphs(of:)` 호출 수). 열쇠를 만드는 조회도 공짜가
+    /// 아니라(PostScript 이름·파일 경로 복사) chunk마다 이 길을 다시 타면 안 된다
+    /// (`HwpTextAttributeCache.kerningCoverage`가 문서 안에서 한 번으로 줄인다).
+    static var lookupCount: Int {
+        FontCache.shared.lookupCount
     }
 
     /// 표를 해석한 집합 — 없는 표는 nil. 해석 못 하는 형식·잘린 표면 nil(모든 글리프).
@@ -151,11 +161,19 @@ enum HwpKerningCoverage {
         }
 
         private var storage: [String: Entry] = [:]
+        private var lookups = 0
         private let lock = NSLock()
+
+        var lookupCount: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return lookups
+        }
 
         func glyphs(of font: CTFont) -> GlyphSet? {
             let key = Self.key(of: font)
             lock.lock()
+            lookups += 1
             if let cached = storage[key] {
                 lock.unlock()
                 return cached.set
@@ -279,7 +297,7 @@ enum HwpKerningCoverage {
                     subtableType = wrapped
                     start += extensionOffset
                 }
-                guard walk.firstVisit(start, kind: 1) else { continue }
+                guard walk.firstVisit(start, kind: 1, type: subtableType) else { continue }
                 if collect.contains(subtableType) {
                     guard let format = table.u16(start),
                           let coverage = coverageOffset(
@@ -331,6 +349,11 @@ enum HwpKerningCoverage {
                 let record = offset + 4 + index * 6
                 guard let start = table.u16(record), let end = table.u16(record + 2)
                 else { return false }
+                // 범위 하나가 채우는 낱말(64글리프) 수만큼 예산을 쓴다 — 기록 하나를 1로 세면 0…65535 범위
+                // 기록이 1,024번 쓰기를 하면서 1만 써, 조작된 표가 예산의 1,024배 일을 시킨다 (#260 리뷰).
+                if start <= end {
+                    guard walk.spend(Int(end) >> 6 - Int(start) >> 6) else { return false }
+                }
                 walk.set.insert(from: start, through: end)
             }
         default:

@@ -277,6 +277,18 @@ import XCTest
             expect(calls) == 1
             let gothic = Self.font(Self.gothicName)
             expect(cache.kerningCoverage(of: gothic)) == HwpKerningCoverage.glyphs(of: gothic)
+            expect(cache.coverageMissCount) == 1
+            // 커닝 집합은 chunk마다가 아니라 글꼴마다 한 번 푼다 — 집합이 nil(전체 글리프)인 Menlo도
+            // 문서 캐시가 그 nil을 담아, 전역 캐시(`HwpKerningCoverage.glyphs`)를 다시 타지 않는다.
+            let menlo = Self.font("Menlo-Regular")
+            let lookups = HwpKerningCoverage.lookupCount
+            for _ in 0 ..< 3 {
+                _ = HwpTextRunBuilder.letterSpacedString(
+                    "ab", attributes: [Self.fontKey: menlo], ratio: -0.2, cache: cache
+                )
+            }
+            expect(cache.coverageMissCount) == 2
+            expect(HwpKerningCoverage.lookupCount - lookups) == 1
         }
     }
 
@@ -400,7 +412,9 @@ import XCTest
         }
 
         func testNumberingLabelLastCharacterIsUnspacedWithNegativeSpacing() throws {
-            // 음수 자간 라벨 — 운반 속성이 kern이어도 마지막 글자는 kern 0이다.
+            // 음수 자간 라벨 — 운반 속성이 kern이어도 마지막 글자는 kern 0이다. 결정론 resolver의 라틴
+            // 글꼴 Menlo는 `morx`라 모든 글리프가 tracking이므로, 마지막 글자를 한글(대체 글꼴 Apple SD
+            // 산돌고딕 Neo — 음절이 커닝 집합 밖이라 kern)로 둬야 kern 운반 속성의 제거를 잰다.
             let shape = try charShape(faceSpacing: [-20, -20, -20, -20, -20, -20, -20])
             let index = HwpIndex(
                 charShapes: [0: shape],
@@ -413,13 +427,17 @@ import XCTest
             let built = HwpTextRunBuilder(index: index, fontResolver: .testDeterministic).build(
                 paragraph: try HwpNumberingHeadingRenderTests.paragraph("가", runs: [(0, 0)]),
                 number: HwpParagraphNumber(
-                    kind: .outline, definitionIndex: 0, numbers: [10], text: "10."
+                    kind: .outline, definitionIndex: 0, numbers: [10], text: "제10장"
                 )
             )
-            let label = NSRange(location: 0, length: 3)
+            expect(built.string.hasPrefix("제10장")) == true
+            // 첫 글자 `제`는 kern으로 자간을 받는다 — 같은 운반 속성의 마지막 글자 `장`만 0이다.
+            expect(Self.value(Self.kernKey, 0, built)) < 0
+            expect(Self.value(Self.trackingKey, 0, built)).to(beNil())
+            let label = NSRange(location: 0, length: 4)
             expect(HwpLetterSpacing.lineEndSpacing(in: built, range: label)) == 0
-            expect(Self.value(Self.trackingKey, 2, built)).to(beNil())
-            expect(Self.value(Self.kernKey, 2, built)) == 0
+            expect(Self.value(Self.trackingKey, 3, built)).to(beNil())
+            expect(Self.value(Self.kernKey, 3, built)) == 0
         }
 
         func testBulletHeadingCarriesNoSpacing() throws {

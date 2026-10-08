@@ -64,9 +64,11 @@ final class HwpTextAttributeCache: @unchecked Sendable {
     private let lock = NSLock()
 
     /// 테스트 전용 관측 지점 (`HwpFontResolver.matchCounter`와 같은 역할) — 캐시가
-    /// 실제로 재계산을 없애는지 유닛 테스트가 확인한다. 속성 사전만 센다.
+    /// 실제로 재계산을 없애는지 유닛 테스트가 확인한다. `hits`·`misses`는 속성 사전,
+    /// `coverageMisses`는 커닝 집합(`kerningCoverage`)을 센다.
     private var hits = 0
     private var misses = 0
+    private var coverageMisses = 0
 
     init() {}
 
@@ -86,6 +88,12 @@ final class HwpTextAttributeCache: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return attributeStorage.count
+    }
+
+    var coverageMissCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return coverageMisses
     }
 
     /// `(shapeId, script)`의 텍스트 속성 사전. 없으면 `create`로 만들어 채운다.
@@ -155,6 +163,7 @@ final class HwpTextAttributeCache: @unchecked Sendable {
             lock.unlock()
             return cached.set
         }
+        coverageMisses += 1
         lock.unlock()
         let set = HwpKerningCoverage.glyphs(of: font)
         lock.lock()
