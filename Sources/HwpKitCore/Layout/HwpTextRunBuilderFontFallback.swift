@@ -58,6 +58,9 @@ extension HwpTextRunBuilder {
         // 라틴 폴백 폰트의 기호는 실물보다 작다 (noori 라운드 11 실측:
         // 실물 □ = 글자 높이의 84%, 폴백은 53%)
         var bulletAttributes = attributes(for: resolved, script: .korean)
+        // 글머리표 기호는 자간을 받지 않는다 (#260 실측: 자간 −20% 글자 모양의 `□`가 자간 없는 전진량
+        // 20pt에 거리 10pt) — 라벨의 마지막 글자와 같은 규칙이다. kern 0은 짝 커닝도 끈다.
+        bulletAttributes[kCTKernAttributeName as NSAttributedString.Key] = NSNumber(value: 0)
         let isGeometricShape = bullet.char.unicodeScalars
             .allSatisfy { (0x25A0 ... 0x25FF).contains($0.value) }
         if isGeometricShape,

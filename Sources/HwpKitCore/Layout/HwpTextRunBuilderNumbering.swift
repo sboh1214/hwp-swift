@@ -65,7 +65,8 @@ extension HwpTextRunBuilder {
         // 라벨 글자는 본문과 같은 chunk 경로로 **글자마다** 낸다 — `accumulate`는 호출
         // 단위로 첫 스칼라의 스크립트를 판정하므로 `(나)`를 통째로 넘기면 `(`의 영문
         // 슬롯이 `나`까지 덮는다. 글자마다 넘겨야 스크립트 전환에서 chunk가 갈리고
-        // 슬롯별 폰트·상대 크기·장평·자간·장식이 본문 글자와 같은 규칙을 따른다.
+        // 슬롯별 폰트·상대 크기·장평·자간·장식이 본문 글자와 같은 규칙을 따른다 (자간은
+        // 마지막 글자만 예외 — 아래).
         let label = NSMutableAttributedString()
         var chunk = Chunk(shapeId: shapeId, script: nil)
         for character in number.text {
@@ -75,6 +76,10 @@ extension HwpTextRunBuilder {
         }
         append(chunk, paragraph: paragraph, to: label)
         guard label.length > 0 else { return }
+        // 라벨의 마지막 글자는 자간을 받지 않는다 (#260 실측: 자간 +20% 글자 모양의 `1.`·`10.`에서
+        // 숫자는 자간을 받고 `.`은 자간 없는 전진량 6.4pt에 거리 10pt가 이어진다 — 줄 끝 글자와 같은
+        // 규칙). 라벨 폭(`typographicWidth`)도 그 자간을 빼고 잰다.
+        HwpLetterSpacing.removeLastCharacterSpacing(in: label)
         // 형식 문자열의 빈칸(`제 ^1 장`)은 본문 빈칸과 같은 규칙이다 — 라벨 안에서만 이웃을 본다.
         applySpaceWidths(to: label)
 

@@ -1,0 +1,209 @@
+import CoreGraphics
+import Foundation
+@testable import HwpKitCore
+import Nimble
+import XCTest
+
+#if canImport(CoreText)
+    import CoreText
+
+    /// 글꼴 커닝·치환 집합 (#260, `HwpKerningCoverage`) — 이 집합 밖 글리프만 자간을 kern에 싣는다. 해석기는
+    /// 설치 글꼴 934종에서 fontTools와 글리프 집합이 같음을 확인했다(2026-10-08, `probes/260`). 여기서는
+    /// 합성 표로 형식별 규칙과 "해석 못 하면 전체" 쪽을 잠근다.
+    final class HwpKerningCoverageTests: XCTestCase {
+        /// 큰 끝 바이트 조립.
+        private struct Bytes {
+            var data = Data()
+
+            mutating func u16(_ values: Int...) {
+                for value in values {
+                    data.append(UInt8((value >> 8) & 0xFF))
+                    data.append(UInt8(value & 0xFF))
+                }
+            }
+
+            mutating func u32(_ value: Int) {
+                u16(value >> 16, value & 0xFFFF)
+            }
+        }
+
+        private static func members(_ set: HwpKerningCoverage.GlyphSet?) -> [Int]? {
+            set.map { set in (0 ..< 256).filter { set.contains(CGGlyph($0)) } }
+        }
+
+        func testMicrosoftKernTableCollectsNonZeroLeftGlyphs() {
+            var table = Bytes()
+            table.u16(0, 1) // 버전 0, 부분표 1
+            table.u16(0, 6 + 8 + 12, 0x0001) // 부분표 버전·길이·coverage(형식 0, 가로)
+            table.u16(2, 12, 1, 0) // 짝 2, searchRange·entrySelector·rangeShift
+            table.u16(5, 6, 0xFFCE) // (5, 6) −50
+            table.u16(7, 8, 0) // (7, 8) 0 — 값 0은 짝이 아니다
+            let set = HwpKerningCoverage.parse(kern: table.data, kerx: nil, gpos: nil)
+            expect(Self.members(set)) == [5]
+        }
+
+        func testAppleKernTableFollowsTheSubtableLengthAcrossPadding() {
+            // 애플 판은 부분표 끝에 채움 바이트를 둘 수 있다 — 짝 수로 재면 둘째 부분표 머리를 놓친다.
+            var table = Bytes()
+            table.u32(0x0001_0000)
+            table.u32(2)
+            table.u32(8 + 8 + 6 + 2) // 길이(채움 2바이트 포함)
+            table.u16(0x0000, 0) // coverage(형식 0)·tuple
+            table.u16(1, 6, 0, 0)
+            table.u16(10, 11, 0xFFEC)
+            table.u16(0) // 채움
+            table.u32(8 + 8 + 6)
+            table.u16(0x0000, 0)
+            table.u16(1, 6, 0, 0)
+            table.u16(12, 13, 30)
+            let set = HwpKerningCoverage.parse(kern: table.data, kerx: nil, gpos: nil)
+            expect(Self.members(set)) == [10, 12]
+        }
+
+        func testUnparsedTablesMeanEveryGlyph() {
+            var format2 = Bytes()
+            format2.u16(0, 1)
+            format2.u16(0, 6, 0x0201) // 형식 2
+            expect(HwpKerningCoverage.parse(kern: format2.data, kerx: nil, gpos: nil)).to(beNil())
+            expect(HwpKerningCoverage.parse(kern: nil, kerx: Data([0]), gpos: nil)).to(beNil())
+            expect(HwpKerningCoverage.parse(kern: nil, kerx: nil, gpos: nil, morx: Data([0])))
+                .to(beNil())
+            // 잘린 표
+            expect(HwpKerningCoverage.parse(kern: Data([0, 0, 0, 1]), kerx: nil, gpos: nil))
+                .to(beNil())
+            // 표가 없으면 빈 집합이다.
+            expect(HwpKerningCoverage.parse(kern: nil, kerx: nil, gpos: nil)?.isEmpty) == true
+        }
+
+        /// GPOS·GSUB 공통 머리 + 룩업 목록. `lookups`는 (유형, 부분표 바이트) — 부분표 안 오프셋은 부분표
+        /// 시작 기준이다.
+        private static func layoutTable(_ lookups: [(type: Int, subtable: Data)]) -> Data {
+            var table = Bytes()
+            table.u16(1, 0, 0, 0, 10) // 버전 1.0, 스크립트·기능 목록 없음, 룩업 목록 10
+            let listStart = 10
+            var lookupBodies: [Data] = []
+            for lookup in lookups {
+                var body = Bytes()
+                body.u16(lookup.type, 0, 1, 8) // 유형·플래그·부분표 1개·오프셋 8
+                body.data.append(lookup.subtable)
+                lookupBodies.append(body.data)
+            }
+            var list = Bytes()
+            list.u16(lookups.count)
+            var offset = 2 + lookups.count * 2
+            for body in lookupBodies {
+                list.u16(offset)
+                offset += body.count
+            }
+            for body in lookupBodies {
+                list.data.append(body)
+            }
+            precondition(table.data.count == listStart)
+            table.data.append(list.data)
+            return table.data
+        }
+
+        private static func coverage1(_ glyphs: [Int]) -> Data {
+            var bytes = Bytes()
+            bytes.u16(1, glyphs.count)
+            for glyph in glyphs {
+                bytes.u16(glyph)
+            }
+            return bytes.data
+        }
+
+        func testGPOSCollectsSinglePairAndExtensionCoverageButNotMarks() {
+            // 짝 조정(형식 1, 커버리지는 +2의 오프셋) [20, 21]
+            var pair = Bytes()
+            pair.u16(1, 10, 0, 0, 0) // 형식·커버리지 10·값 형식 0·0·짝 집합 0
+            pair.data.append(Self.coverage1([20, 21]))
+            // 확장(9) → 단일 조정(1) 형식 1, 범위 커버리지 30–32
+            var single = Bytes()
+            single.u16(1, 6, 0)
+            single.u16(2, 1, 30, 32, 0) // 커버리지 형식 2: 범위 1개
+            var wrapper = Bytes()
+            wrapper.u16(1, 1)
+            wrapper.u32(8)
+            wrapper.data.append(single.data)
+            // 표시 위치 조정(4)은 kern 0에서도 걸리므로 넣지 않는다.
+            var mark = Bytes()
+            mark.u16(1, 12, 12, 0, 0, 0)
+            mark.data.append(Self.coverage1([50]))
+            let gpos = Self.layoutTable([(2, pair.data), (9, wrapper.data), (4, mark.data)])
+            let set = HwpKerningCoverage.parse(kern: nil, kerx: nil, gpos: gpos)
+            expect(Self.members(set)) == [20, 21, 30, 31, 32]
+        }
+
+        func testGSUBCollectsLigatureAndContextStartGlyphs() {
+            // 합자(4) 형식 1 [41]
+            var ligature = Bytes()
+            ligature.u16(1, 6, 0)
+            ligature.data.append(Self.coverage1([41]))
+            // 문맥 연쇄(6) 형식 3: 앞 문맥 1개, 입력 커버리지 [40]
+            var chained = Bytes()
+            chained.u16(3, 1, 14, 1, 20, 0, 0) // 형식·앞 1·오프셋 14·입력 1·오프셋 20·뒤 0·치환 0
+            chained.data.append(Self.coverage1([99])) // 앞 문맥 커버리지(14) — 시작 글리프가 아니다
+            chained.data.append(Self.coverage1([40]))
+            // 확장(7) → 문맥(5) 형식 3: 입력 1개·치환 0, 커버리지 [42]
+            var context = Bytes()
+            context.u16(3, 1, 0, 8)
+            context.data.append(Self.coverage1([42]))
+            var wrapper = Bytes()
+            wrapper.u16(1, 5)
+            wrapper.u32(8)
+            wrapper.data.append(context.data)
+            // 단일 치환(1)은 건너뛴다.
+            var single = Bytes()
+            single.u16(1, 6, 0)
+            single.data.append(Self.coverage1([60]))
+            let gsub = Self.layoutTable([
+                (4, ligature.data), (6, chained.data), (7, wrapper.data), (1, single.data),
+            ])
+            let set = HwpKerningCoverage.parse(kern: nil, kerx: nil, gpos: nil, gsub: gsub)
+            expect(Self.members(set)) == [40, 41, 42]
+        }
+
+        func testSharedOffsetsAreWalkedOnce() {
+            // 조작된 표: 룩업 65,535개가 모두 같은 자리를 가리키고, 그 자리는 룩업 목록 자신과 겹친다 —
+            // 값이 전부 2라 유형 2(짝 조정)·부분표 2개(같은 자리)·범위 커버리지 [2, 2]로 읽힌다. 한 번만
+            // 훑으면 곧바로 끝나고, 자리마다 다시 훑으면 65,535² 번이다.
+            var table = Bytes()
+            table.u16(1, 0, 0, 0, 10)
+            table.u16(0xFFFF)
+            for _ in 0 ..< 0xFFFF {
+                table.u16(2)
+            }
+            let set = HwpKerningCoverage.parse(kern: nil, kerx: nil, gpos: table.data)
+            expect(Self.members(set)) == [2]
+        }
+
+        func testWorkBudgetGivesUpAsEveryGlyph() {
+            var walk = HwpKerningCoverage.Walk()
+            expect(walk.spend(HwpKerningCoverage.Walk.maximumWork)) == true
+            expect(walk.spend(1)) == false
+        }
+
+        func testUnknownLookupTypeMeansEveryGlyph() {
+            let gpos = Self.layoutTable([(10, Data([0, 1, 0, 6]))])
+            expect(HwpKerningCoverage.parse(kern: nil, kerx: nil, gpos: gpos)).to(beNil())
+        }
+
+        func testSystemFonts() {
+            func glyph(_ character: UniChar, _ font: CTFont) -> CGGlyph {
+                var character = character
+                var glyph = CGGlyph()
+                _ = CTFontGetGlyphsForCharacters(font, &character, &glyph, 1)
+                return glyph
+            }
+            // macOS·iOS 공통 글꼴(iOS 27 런타임 글꼴 파일로도 같은 판정을 확인했다): Times New Roman은 `A`가 짝
+            // 커닝의 첫 글리프, Apple SD 산돌고딕 Neo는 한글 음절이 집합 밖, Menlo는 AAT `morx`라 해석하지 않는다.
+            let times = CTFontCreateWithName("TimesNewRomanPSMT" as CFString, 12, nil)
+            let gothic = CTFontCreateWithName("AppleSDGothicNeo-Regular" as CFString, 12, nil)
+            expect(HwpKerningCoverage.glyphs(of: times)?.contains(glyph(0x41, times))) == true
+            expect(HwpKerningCoverage.glyphs(of: gothic)?.contains(glyph(0xAC00, gothic))) == false
+            expect(HwpKerningCoverage.glyphs(of: gothic)?.contains(glyph(0x41, gothic))) == true
+            let menlo = CTFontCreateWithName("Menlo-Regular" as CFString, 12, nil)
+            expect(HwpKerningCoverage.glyphs(of: menlo)).to(beNil())
+        }
+    }
+#endif

@@ -384,9 +384,12 @@ extension HwpTextRunBuilder {
             chunkAttributes[HwpAttributedStringKey.memoAnchorStroke] =
                 HwpMemoPanelPainter.borderColor
         }
-        // 빈칸 폭은 여기서 정하지 않는다 — 앞뒤 chunk의 글자가 정하므로 조판 문자열이
-        // 완성된 뒤 `applySpaceWidths`가 한 번에 준다 (#249).
-        output.append(NSAttributedString(string: chunk.text, attributes: chunkAttributes))
+        // 자간은 글자마다 그 글자 전진량의 %다 (#260, `letterSpacedString`). 빈칸 폭은 앞뒤 chunk의
+        // 글자가 정하므로 조판 문자열이 완성된 뒤 `applySpaceWidths`가 한 번에 준다 (#249).
+        output.append(Self.letterSpacedString(
+            chunk.text, attributes: chunkAttributes, ratio: spacingRatio(resolved.shape, script),
+            preceding: { HwpLetterSpacing.Preceding(endOf: output) }, cache: attributeCache
+        ))
     }
 
     /// U+FFFC 컨트롤 마커 run을 내보낸다.
@@ -420,6 +423,10 @@ extension HwpTextRunBuilder {
             var textAttributes = attributes(for: resolved, script: script)
             if replacement.isSuperscript {
                 applyNoteReferenceSuperscript(to: &textAttributes, shape: resolved.shape)
+            }
+            if Self.isNoteNumber(controlIndex: controlIndex, in: paragraph) {
+                // 각주·미주 번호는 자간을 받지 않는다 (#260 실측, `isNoteNumber`).
+                textAttributes[kCTKernAttributeName as NSAttributedString.Key] = NSNumber(value: 0)
             }
             if let controlIndex {
                 textAttributes[HwpAttributedStringKey.controlIndex] = NSNumber(
@@ -526,6 +533,8 @@ extension HwpTextRunBuilder {
 
         let spacing = CGFloat(value(at: slot, in: shape.faceSpacing, default: 0))
         let location = CGFloat(value(at: slot, in: shape.faceLocation, default: 0))
+        // kern은 늘 싣는다(0일 때만 CoreText가 짝 커닝을 끈다). 본문 글자의 자간은 `append`가 글자마다 다시
+        // 싣고(#260), 이 값은 그 경로 밖 run(쪽 번호 등 컨트롤 치환·탭·개체 마커)의 종전 값이다.
         var attributes: [NSAttributedString.Key: Any] = [
             kCTFontAttributeName as NSAttributedString.Key: font,
             HwpAttributedStringKey.baseFontSize: NSNumber(value: Double(baseSize)),

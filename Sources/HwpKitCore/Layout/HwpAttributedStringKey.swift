@@ -235,4 +235,10 @@ public enum HwpAttributedStringKey {
     /// U+00A0으로 조판되지만 한글은 폭이 다르다(한글 슬롯 크기의 1/4, 묶음 빈칸은 1/2 —
     /// `HwpSpaceWidthMetrics`). 빈칸 폭 패스(`HwpTextRunBuilder.applySpaceWidths`)만 읽는다.
     static let fixedWidthSpace = NSAttributedString.Key("hwp.fixedWidthSpace")
+    /// 자간 chunk 표식 — 값은 그 chunk의 자간 비율 (NSNumber, 0.2 = 20%, #260). 글자마다의 자간
+    /// (그 글자 전진량 × 비율)은 `kCTKernAttributeName` 또는 `kCTTrackingAttributeName`에 실린다
+    /// (`HwpLetterSpacing.Carrier`). 그 kern이 빈칸 폭·다른 컨트롤의 kern과 구별되지 않으므로 자간
+    /// 값이 필요한 소비자(줄 끝 자간 생략 — `HwpLetterSpacing.lineEndSpacing`)는 이 표식이 있는
+    /// 글자에서만 읽는다. 자간이 0인 chunk에는 붙지 않는다.
+    static let letterSpacing = NSAttributedString.Key("hwp.letterSpacing")
 }

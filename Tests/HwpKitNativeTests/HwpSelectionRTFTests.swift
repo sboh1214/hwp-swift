@@ -97,6 +97,19 @@ final class HwpSelectionRTFTests: XCTestCase {
         expect(normalized[.strokeWidth] as? NSNumber) == NSNumber(value: 4.0)
     }
 
+    func testLetterSpacingTrackingBecomesKern() {
+        // 자간(#260)은 커닝 관여 글리프·양수 자간이면 tracking(+ kern 0)에 실린다 — RTF에는 tracking이
+        // 없어 kern으로 옮긴다. kern에 실린 자간은 그대로다.
+        let tracking = NSAttributedString.Key(kCTTrackingAttributeName as String)
+        let tracked = HwpSelectionRTF.normalizedAttributes([
+            .kern: NSNumber(value: 0), tracking: NSNumber(value: 1.5),
+        ])
+        expect(tracked[tracking]).to(beNil())
+        expect((tracked[.kern] as? NSNumber)?.doubleValue) == 1.5
+        let kerned = HwpSelectionRTF.normalizedAttributes([.kern: NSNumber(value: -0.4)])
+        expect((kerned[.kern] as? NSNumber)?.doubleValue) == -0.4
+    }
+
     func testUnderlineAndStrikethroughConvertWithColors() {
         let normalized = HwpSelectionRTF.normalizedAttributes([
             HwpAttributedStringKey.underlineStyle: NSNumber(value: 1),
