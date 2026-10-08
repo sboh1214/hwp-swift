@@ -1,7 +1,7 @@
 import CoreGraphics
 import CoreText
 import Foundation
-import HwpKitCore
+@testable import HwpKitCore
 @testable import HwpKitNative
 import Nimble
 import XCTest
@@ -120,51 +120,96 @@ final class HwpPageLayerLetterSpacingTests: XCTestCase {
         expect(maxClusters) == 2
     }
 
-    func testLineEndTrackingIsNotDecorated() throws {
-        // 줄 끝 글자의 양수 자간은 CoreText가 매달아 둔 몫이라 한글처럼 장식하지 않는다 — 음영이 마지막
-        // 글자의 자간 없는 전진량에서 끝난다 (빈칸이 뒤따르는 줄은 그대로 둔다).
+    /// `aaaa`류 글자열에 자간 `spacing`(tracking, 자간 표식 포함) — 뒤에 `suffix`.
+    private static func spacedLine(
+        _ text: String, spacing: Double, suffix: NSAttributedString? = nil,
+        extra: [NSAttributedString.Key: Any] = [:]
+    ) -> NSAttributedString {
         let menlo = CTFontCreateWithName("Menlo-Regular" as CFString, 20, nil)
-        let tracking = kCTTrackingAttributeName as NSAttributedString.Key
-        func line(_ text: String) -> NSAttributedString {
-            let string = NSMutableAttributedString(string: text, attributes: [
-                Self.font: menlo, kCTKernAttributeName as NSAttributedString.Key: NSNumber(value: 0),
-            ])
-            string.addAttribute(
-                tracking, value: NSNumber(value: 2.4), range: NSRange(location: 0, length: 4)
-            )
-            return string
+        var attributes: [NSAttributedString.Key: Any] = [
+            Self.font: menlo, kCTKernAttributeName as NSAttributedString.Key: NSNumber(value: 0),
+            HwpAttributedStringKey.letterSpacing: NSNumber(value: spacing / 12),
+            kCTTrackingAttributeName as NSAttributedString.Key: NSNumber(value: spacing),
+        ]
+        attributes.merge(extra) { _, new in new }
+        let string = NSMutableAttributedString(string: text, attributes: attributes)
+        if let suffix {
+            string.append(suffix)
         }
-        let layer = HwpPageLayer()
-        func clip(_ text: String) -> CGFloat? {
-            let ctLine = CTLineCreateWithAttributedString(line(text))
-            let runs = CTLineGetGlyphRuns(ctLine) as? [CTRun] ?? []
-            return layer.lineEndTrackingClip(of: ctLine, runs: runs, lineOrigin: .zero)
-        }
-        let typographic = CGFloat(CTLineGetTypographicBounds(
-            CTLineCreateWithAttributedString(line("abcd")), nil, nil, nil
-        ))
-        expect(clip("abcd")).to(beCloseTo(typographic - 2.4, within: 1e-9))
-        expect(clip("abcd\n")).to(beCloseTo(typographic - 2.4, within: 1e-9))
-        expect(clip("abcd ")).to(beNil())
+        return string
+    }
 
-        var shaded = [NSAttributedString.Key: Any]()
-        line("abcd").enumerateAttributes(in: NSRange(location: 0, length: 4)) { attributes, _, _ in
-            shaded = attributes
+    /// 폭 0 컨트롤 표식 (필드 끝·책갈피 — `HwpTextRunBuilder.appendControlMarker`).
+    private static var controlMarker: NSAttributedString {
+        let menlo = CTFontCreateWithName("Menlo-Regular" as CFString, 20, nil)
+        var attributes: [NSAttributedString.Key: Any] = [
+            Self.font: menlo, HwpAttributedStringKey.controlIndex: NSNumber(value: 0),
+        ]
+        if let delegate = HwpInlineObjectReservation.runDelegate(width: 0, height: 0) {
+            attributes[kCTRunDelegateAttributeName as NSAttributedString.Key] = delegate
         }
-        shaded[HwpAttributedStringKey.shadeColor] = CGColor(red: 0, green: 0, blue: 1, alpha: 1)
-        shaded[kCTForegroundColorAttributeName as NSAttributedString.Key] = CGColor(
-            red: 0, green: 0, blue: 1, alpha: 1
+        return NSAttributedString(string: "\u{FFFC}", attributes: attributes)
+    }
+
+    func testLineEndDecorationEdgeIsTheUnspacedAdvance() {
+        // 줄 끝 글자의 장식은 그 글자의 자간 없는 전진량에서 끝난다 — 양수 자간은 그 몫을 자르고(CoreText가
+        // 매달아 둔 몫·컨트롤 표식에 막혀 안 매달린 몫), 음수 자간은 그 몫을 늘린다. 뒤에 빈칸이 오면 그대로다.
+        let layer = HwpPageLayer()
+        func edge(_ string: NSAttributedString) -> CGFloat? {
+            let line = CTLineCreateWithAttributedString(string)
+            let runs = CTLineGetGlyphRuns(line) as? [CTRun] ?? []
+            return layer.lineEndDecorationEdge(
+                of: line, runs: runs, attributes: runs.map(layer.runAttributes), lineOrigin: .zero
+            )?.edge
+        }
+        let unspaced = CGFloat(CTLineGetTypographicBounds(
+            CTLineCreateWithAttributedString(Self.spacedLine("abcd", spacing: 0)), nil, nil, nil
+        ))
+        let newline = NSAttributedString(string: "\n")
+        for spacing in [2.4, -2.4] {
+            let expected = unspaced + CGFloat(spacing) * 3
+            expect(edge(Self.spacedLine("abcd", spacing: spacing)))
+                .to(beCloseTo(expected, within: 1e-6), description: "\(spacing)")
+            expect(edge(Self.spacedLine("abcd", spacing: spacing, suffix: newline)))
+                .to(beCloseTo(expected, within: 1e-6), description: "\(spacing) LF")
+            expect(edge(Self.spacedLine("abcd", spacing: spacing, suffix: Self.controlMarker)))
+                .to(beCloseTo(expected, within: 1e-6), description: "\(spacing) control")
+            expect(edge(Self.spacedLine("abcd ", spacing: spacing))).to(beNil())
+        }
+        // 자간 표식이 없는 run의 tracking은 자간이 아니다.
+        let unmarked = NSMutableAttributedString(
+            attributedString: Self.spacedLine("abcd", spacing: 2.4)
         )
-        let raster = try render(NSAttributedString(string: "abcd", attributes: shaded))
-        let blueColumns = (0 ..< raster.width).filter { x in
-            (0 ..< raster.data.count / raster.bytesPerRow).contains { y in
-                let offset = y * raster.bytesPerRow + x * 4
-                return raster.data[offset] <= 10 && raster.data[offset + 2] > 200
+        unmarked.removeAttribute(
+            HwpAttributedStringKey.letterSpacing, range: NSRange(location: 0, length: 4)
+        )
+        expect(edge(unmarked)).to(beNil())
+    }
+
+    func testLineEndSpacingIsNotDecorated() throws {
+        // 음영이 마지막 글자의 자간 없는 전진량에서 끝난다 — 양수면 잘리고 음수면 늘어난다.
+        let blue = CGColor(red: 0, green: 0, blue: 1, alpha: 1)
+        let unspaced = CGFloat(CTLineGetTypographicBounds(
+            CTLineCreateWithAttributedString(Self.spacedLine("abcd", spacing: 0)), nil, nil, nil
+        ))
+        for spacing in [2.4, -2.4] {
+            let raster = try render(Self.spacedLine("abcd", spacing: spacing, extra: [
+                HwpAttributedStringKey.shadeColor: blue,
+                kCTForegroundColorAttributeName as NSAttributedString.Key: blue,
+            ]))
+            let blueColumns = (0 ..< raster.width).filter { x in
+                (0 ..< raster.data.count / raster.bytesPerRow).contains { y in
+                    let offset = y * raster.bytesPerRow + x * 4
+                    return raster.data[offset] <= 10 && raster.data[offset + 2] > 200
+                }
             }
+            // 그리는 원점 x 10.3 — 음영 오른쪽 끝은 10.3 + 자간 없는 마지막 전진량 끝.
+            let right = CGFloat(try XCTUnwrap(blueColumns.last) + 1) / Self.scale
+            expect(right).to(
+                beCloseTo(10.3 + unspaced + CGFloat(spacing) * 3, within: 0.3),
+                description: "\(spacing)"
+            )
         }
-        // 그리는 원점 x 10.3 — 음영 오른쪽 끝은 10.3 + 폭 − 2.4pt (자르지 않으면 10.3 + 폭).
-        let right = CGFloat(try XCTUnwrap(blueColumns.last) + 1) / Self.scale
-        expect(right).to(beCloseTo(10.3 + typographic - 2.4, within: 0.3))
     }
 
     func testRunBoundsApplyTheTextMatrix() {

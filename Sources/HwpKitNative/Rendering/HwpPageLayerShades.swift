@@ -7,8 +7,10 @@ import HwpKitCore
 
 extension HwpPageLayer {
     /// 음영 배경 (글리프보다 먼저) — run의 음영 상자를 줄의 색별 경로에 모은다 (`SolidFillBatch`).
-    func collectShade(_ run: CTRun, lineOrigin: CGPoint, into shades: inout SolidFillBatch) {
-        let attributes = runAttributes(run)
+    func collectShade(
+        _ run: CTRun, attributes: [NSAttributedString.Key: Any], lineOrigin: CGPoint,
+        into shades: inout SolidFillBatch
+    ) {
         guard let shade = attributes[HwpAttributedStringKey.shadeColor] else { return }
         let bounds = shadeBounds(of: run, attributes: attributes, lineOrigin: lineOrigin)
         shades.add(bounds, color: shade)
@@ -34,11 +36,11 @@ extension HwpPageLayer {
     /// 범위로 묶는다. run마다 세우면 자간이 있는 라틴 글자열(#260: 글자마다 run)의 글자마다 괄호가
     /// 섰다.
     func drawMemoAnchorBrackets(
-        of runs: [CTRun], lineOrigin: CGPoint, clipMaxX: CGFloat?, in ctx: CGContext
+        of runs: [CTRun], attributes runAttributes: [[NSAttributedString.Key: Any]],
+        lineOrigin: CGPoint, lineEnd: LineEndEdge?, in ctx: CGContext
     ) {
         var group: (bounds: CGRect, stroke: Any)?
-        for run in runs {
-            let attributes = runAttributes(run)
+        for (run, attributes) in zip(runs, runAttributes) {
             guard let stroke = attributes[HwpAttributedStringKey.memoAnchorStroke],
                   attributes[HwpAttributedStringKey.shadeColor] != nil
             else {
@@ -49,9 +51,7 @@ extension HwpPageLayer {
                 continue
             }
             var bounds = shadeBounds(of: run, attributes: attributes, lineOrigin: lineOrigin)
-            if let clipMaxX, bounds.maxX > clipMaxX {
-                bounds.size.width = max(0, clipMaxX - bounds.minX)
-            }
+            lineEnd?.adjust(&bounds)
             if let current = group, abs(bounds.minX - current.bounds.maxX) < 0.5 {
                 group = (current.bounds.union(bounds), current.stroke)
             } else {
@@ -105,20 +105,18 @@ extension HwpPageLayer {
 /// 이음매가 없다. 색은 처음 나온 순서대로 칠한다.
 struct SolidFillBatch {
     private var groups: [(color: CGColor, path: CGMutablePath)] = []
-    /// 이 x 오른쪽은 칠하지 않는다 — 줄 끝 글자에 매달린 양수 자간 (`lineEndTrackingClip`).
-    let clipMaxX: CGFloat?
+    /// 줄 끝 글자의 장식 끝 (`HwpPageLayer.lineEndDecorationEdge`).
+    let lineEnd: LineEndEdge?
 
-    init(clipMaxX: CGFloat? = nil) {
-        self.clipMaxX = clipMaxX
+    init(lineEnd: LineEndEdge? = nil) {
+        self.lineEnd = lineEnd
     }
 
     /// `color`(nil이면 검정)의 경로에 사각형을 더한다.
     mutating func add(_ rect: CGRect, color: Any?) {
         var rect = rect
-        if let clipMaxX, rect.maxX > clipMaxX {
-            guard clipMaxX > rect.minX else { return }
-            rect.size.width = clipMaxX - rect.minX
-        }
+        lineEnd?.adjust(&rect)
+        guard rect.width > 0 else { return }
         let resolved: CGColor = if let color, CFGetTypeID(color as CFTypeRef) == CGColor.typeID {
             unsafeBitCast(color as CFTypeRef, to: CGColor.self)
         } else {

@@ -238,7 +238,9 @@ public enum HwpAttributedStringKey {
     /// 자간 chunk 표식 — 값은 그 chunk의 자간 비율 (NSNumber, 0.2 = 20%, #260). 글자마다의 자간
     /// (그 글자 전진량 × 비율)은 `kCTKernAttributeName` 또는 `kCTTrackingAttributeName`에 실린다
     /// (`HwpLetterSpacing.Carrier`). 그 kern이 빈칸 폭·다른 컨트롤의 kern과 구별되지 않으므로 자간
-    /// 값이 필요한 소비자(줄 끝 자간 생략 — `HwpLetterSpacing.lineEndSpacing`)는 이 표식이 있는
-    /// 글자에서만 읽는다. 자간이 0인 chunk에는 붙지 않는다.
-    static let letterSpacing = NSAttributedString.Key("hwp.letterSpacing")
+    /// 값이 필요한 소비자(줄 끝 자간 생략 — `HwpLetterSpacing.lineEnd`, 줄 끝 글자의 장식 끝 —
+    /// `HwpPageLayer.lineEndDecorationEdge`)는 이 표식이 있는 글자에서만 읽는다. 자간이 0인 chunk에는
+    /// 붙지 않는다. 한글은 줄의 마지막 글자에 자간을 주지 않으므로, 이 문자열을 직접 그리는 렌더러는
+    /// 줄 끝 글자의 이 자간을 장식(밑줄·음영)에서 빼야 조판과 맞는다.
+    public static let letterSpacing = NSAttributedString.Key("hwp.letterSpacing")
 }
