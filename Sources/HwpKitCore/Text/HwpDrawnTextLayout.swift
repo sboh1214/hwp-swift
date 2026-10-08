@@ -449,8 +449,15 @@ public enum HwpDrawnTextLayout {
             at: 0, effectiveRange: nil
         ), CFGetTypeID(style as CFTypeRef) == CTParagraphStyleGetTypeID() else { return 0 }
         // 내용 폭 — 줄 끝 공백(과 매달린 양수 자간)은 정렬에 넣지 않는다. CoreText가 보통 줄을 정렬하는
-        // 폭과 같다 (#260: 넣으면 그 몫의 절반·전부만큼 왼쪽으로 밀렸다).
-        let naturalWidth = HwpLineBreaker.contentWidth(of: line)
+        // 폭과 같다 (#260: 넣으면 그 몫의 절반·전부만큼 왼쪽으로 밀렸다). 마지막 글자의 자간 중
+        // CoreText가 넣고 잰 몫(`lineEndExcess`)도 빼되, 보통 줄의 `lineEndSpacingAligned`처럼 그 몫을 뺀
+        // 폭이 줄에 들 때만이다 — 줄 끝 빈칸 하나로 이 경로에 들어온 줄이 자간만큼 튀지 않게 하고(#260
+        // 리뷰), 글꼴 차로 정말 넘치는 줄은 보통 경로와 같이 그대로 둔다 (noori 1쪽 가운데 정렬 줄).
+        let range = NSRange(location: 0, length: attributedString.length)
+        let content = HwpLineBreaker.contentWidth(of: line)
+        let excess = HwpLetterSpacing.lineEndExcess(in: attributedString, range: range)
+        let naturalWidth = content - excess <= lineWidth + HwpLineBreaker.lineEndTolerance
+            ? content - excess : content
         var alignment = CTTextAlignment.natural
         let paragraphStyle = style as! CTParagraphStyle // swiftlint:disable:this force_cast
         CTParagraphStyleGetValueForSpecifier(

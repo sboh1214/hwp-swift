@@ -43,6 +43,109 @@ import XCTest
             expect(HwpLetterSpacing.isLineEndWhitespace(0x200B)) == false
         }
 
+        /// 폭 0 컨트롤 표식(필드 끝·책갈피) — `HwpTextRunBuilder.appendControlMarker`와 같은 속성.
+        private static func controlMarker(_ font: CTFont) -> NSAttributedString {
+            var attributes: [NSAttributedString.Key: Any] = [
+                fontKey: font, HwpAttributedStringKey.controlIndex: NSNumber(value: 0),
+            ]
+            if let delegate = HwpInlineObjectReservation.runDelegate(width: 0, height: 0) {
+                attributes[kCTRunDelegateAttributeName as NSAttributedString.Key] = delegate
+            }
+            return NSAttributedString(string: "\u{FFFC}", attributes: attributes)
+        }
+
+        func testLineEndSkipsZeroWidthControlMarkers() {
+            // 한글은 줄 끝 자간 규칙에서 필드 끝·책갈피를 없는 것으로 본다 (#260 리뷰 실측) — 그 앞 글자가
+            // 마지막 글자다. 양수 자간은 표식에 막혀 CoreText가 매달지 못하므로 CoreText 몫(excess)이 된다.
+            let font = Self.menlo()
+            let expected = Self.advance(0x64, in: font) * 0.2
+            for ratio: CGFloat in [-0.2, 0.2] {
+                let string = NSMutableAttributedString(
+                    attributedString: HwpTextRunBuilder.letterSpacedString(
+                        "abcd", attributes: [Self.fontKey: font], ratio: ratio
+                    )
+                )
+                string.append(Self.controlMarker(font))
+                string.append(NSAttributedString(string: " ", attributes: [Self.fontKey: font]))
+                let range = NSRange(location: 0, length: string.length)
+                let end = HwpLetterSpacing.lineEnd(in: string, range: range)
+                expect(end.spacing).to(beCloseTo(expected * (ratio < 0 ? -1 : 1), within: 1e-9))
+                expect(end.followedByControl) == true
+                expect(HwpLetterSpacing.lineEndExcess(in: string, range: range)) == end.spacing
+            }
+            // 표식이 없으면 양수 자간은 CoreText가 매다는 몫이라 excess가 0이다.
+            let plain = HwpTextRunBuilder.letterSpacedString(
+                "abcd ", attributes: [Self.fontKey: font], ratio: 0.2
+            )
+            let range = NSRange(location: 0, length: plain.length)
+            expect(HwpLetterSpacing.lineEndExcess(in: plain, range: range)) == 0
+            expect(HwpLetterSpacing.lineEndSpacing(in: plain, range: range))
+                .to(beCloseTo(expected, within: 1e-9))
+        }
+
+        func testRightAlignedLineIgnoresATrailingControlMarker() throws {
+            // 링크 끝·책갈피가 줄 끝에 있어도 마지막 글자는 자간 없는 전진량으로 오른쪽 끝에 맞는다 (한글:
+            // 표식 유무와 같은 498.24pt).
+            let font = Self.menlo()
+            var alignment = CTTextAlignment.right
+            let style = withUnsafePointer(to: &alignment) { pointer in
+                CTParagraphStyleCreate([CTParagraphStyleSetting(
+                    spec: .alignment, valueSize: MemoryLayout<CTTextAlignment>.size, value: pointer
+                )], 1)
+            }
+            let attributes: [NSAttributedString.Key: Any] = [
+                Self.fontKey: font, kCTParagraphStyleAttributeName as NSAttributedString.Key: style,
+            ]
+            for ratio: CGFloat in [-0.2, 0.2] {
+                let string = NSMutableAttributedString(
+                    attributedString: HwpTextRunBuilder.letterSpacedString(
+                        "abcd", attributes: attributes, ratio: ratio
+                    )
+                )
+                let marker = NSMutableAttributedString(attributedString: Self.controlMarker(font))
+                marker.addAttribute(
+                    kCTParagraphStyleAttributeName as NSAttributedString.Key, value: style,
+                    range: NSRange(location: 0, length: 1)
+                )
+                string.append(marker)
+                let lines = HwpDrawnTextLayout.lines(
+                    attributedString: string, origin: .zero, lineWidth: 200
+                )
+                let line = try XCTUnwrap(lines.first)
+                let run = try XCTUnwrap((CTLineGetGlyphRuns(line.line) as? [CTRun])?.first {
+                    let range = CTRunGetStringRange($0)
+                    return (range.location ..< range.location + range.length).contains(3)
+                })
+                let index = 3 - CTRunGetStringRange(run).location
+                var position = CGPoint.zero
+                CTRunGetPositions(run, CFRange(location: index, length: 1), &position)
+                let dEnd = line.baselineOrigin.x + position.x + Self.advance(0x64, in: font)
+                expect(dEnd).to(beCloseTo(200, within: 0.01), description: "\(ratio)")
+            }
+        }
+
+        func testLongStringsTakeNoLineEndCompensation() {
+            // CoreText는 10,240 UTF-16 단위를 넘는 문자열의 kern·tracking을 통째로 무시하므로, 그런
+            // 문자열에는 적용되지 않은 자간을 빼는 줄 끝 보정을 하지 않는다.
+            let font = CTFontCreateWithName("AppleSDGothicNeo-Regular" as CFString, 10, nil)
+            let limit = HwpLetterSpacing.coreTextSpacingLengthLimit
+            for (length, applies) in [(limit, true), (limit + 1, false)] {
+                let string = HwpTextRunBuilder.letterSpacedString(
+                    String(repeating: "가", count: length), attributes: [Self.fontKey: font],
+                    ratio: -0.1
+                )
+                let range = NSRange(location: 0, length: 40)
+                expect(HwpLetterSpacing.lineEndSpacing(in: string, range: range)) < 0
+                expect(HwpLetterSpacing.lineEndExcess(in: string, range: range) < 0) == applies
+                // CoreText 자체가 그 경계에서 자간을 버린다 — 경계가 바뀌면 이 단언이 먼저 알린다.
+                let typesetter = CTTypesetterCreateWithAttributedString(string)
+                let line = CTTypesetterCreateLine(typesetter, CFRange(location: 0, length: 40))
+                let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+                let unspaced = Self.advance(0xAC00, in: font) * 40
+                expect(width < unspaced - 1) == applies
+            }
+        }
+
         func testFallbackCacheKeysOnCodeUnitsNotCanonicalEquivalence() {
             // U+2329와 U+3008은 정준 분해가 같아 `String ==`이 같다고 본다 — 글리프가 다를 수 있으므로
             // 두 항목이어야 한다.

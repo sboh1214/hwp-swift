@@ -7,10 +7,13 @@ import Foundation
 /// CoreText의 기본 justification은 남는 폭을 글자 사이에도 배분해 좁은 단에서
 /// "a m e t ,"처럼 자간이 벌어진다. 한글은 단어 간격(공백) 위주로 늘린다
 /// (Column 픽스처 PrvImage 실측 — 한 칸 공백이 10배 이상 벌어짐).
-/// 공백이 없는 줄(CJK 연속 run 등)과 문단 마지막 줄은 CT 기본 조판을 유지한다.
+/// 공백이 없는 줄(CJK 연속 run 등)과 문단 마지막 줄은 CT 기본 조판을 유지한다 — 단 공백
+/// 없는 줄의 마지막 글자 자간을 CoreText가 줄 폭에 넣고 맞췄으면 그 자간을 뺀 폭으로 CoreText
+/// 정렬을 다시 건다 (#260, `lineEndSpacingJustified`).
 public enum HwpWordJustification {
     /// frameLine이 양쪽 정렬 대상 줄이면 공백 kern으로 재조판한 CTLine을 준다.
-    /// 대상이 아니면 (마지막 줄/공백 없음/정렬 아님) nil — 호출자가 원본을 그린다.
+    /// 대상이 아니면 (마지막 줄/정렬 아님, 공백이 없고 줄 끝 자간도 없는 줄) nil — 호출자가
+    /// 원본을 그린다. 공백 없는 줄은 줄 끝 자간이 있을 때 그 몫만큼 좁게 다시 맞춘 줄이다.
     public static func wordJustifiedLine(
         frameLine: CTLine,
         attributedString: NSAttributedString,
@@ -66,13 +69,12 @@ public enum HwpWordJustification {
         )
         // 늘릴 곳: 단어 간격이 있으면 빈칸, 라벨 빈칸뿐이면 본문 글자 사이 (CT의
         // 프레임 정렬은 라벨 빈칸까지 늘리므로 한글처럼 글자 사이만 균등하게
-        // 벌린다). 라벨도 빈칸도 없는 줄은 CT 기본 정렬 그대로다.
+        // 벌린다). 라벨도 빈칸도 없는 줄은 CT 기본 정렬이되, 마지막 글자 자간만큼 좁게 다시
+        // 맞춘다 (`lineEndSpacingJustified` — 줄 끝 자간이 없으면 CT 프레임 줄 그대로).
         let stretchRanges: [NSRange]
         if spaceOffsets.isEmpty {
             guard excludedLabelSpaces else {
-                return isLastLine ? nil : lineEndSpacingJustified(
-                    substring, range: nsRange, in: attributedString, targetWidth: targetWidth
-                )
+                return isLastLine ? nil : lineEndSpacingJustified(substring, targetWidth: targetWidth)
             }
             stretchRanges = interCharacterRanges(in: substring)
             guard !stretchRanges.isEmpty else {
@@ -83,16 +85,23 @@ public enum HwpWordJustification {
         }
 
         // 자연 폭 (문단 스타일 정렬은 CTLine 단독 조판에 적용되지 않는다)
-        // 줄의 마지막 글자는 자간을 받지 않는다 (#260) — 음수 자간은 CoreText가 폭에 넣고 재므로
-        // 뺀다(양수는 tracking이라 CoreText가 줄 끝 공백처럼 이미 뺐다). 안 빼면 그 자간만큼 더 벌려
-        // 마지막 글자가 오른쪽 끝을 넘는다 (noori 양쪽 정렬 줄: 한글은 마지막 글자 + 자간 없는
-        // 전진량 = 오른쪽 끝).
+        // 줄의 마지막 글자는 자간을 받지 않는다 (#260) — CoreText가 줄 폭에 넣고 잰 그 자간
+        // (`lineEndExcess`: 음수, 컨트롤 표식에 막혀 안 매달린 양수)을 뺀다. 안 빼면 그 자간만큼 더
+        // 벌려 마지막 글자가 오른쪽 끝을 넘는다 (noori 양쪽 정렬 줄: 한글은 마지막 글자 + 자간 없는
+        // 전진량 = 오른쪽 끝). 재는 문자열은 이 줄의 부분 문자열이다 — 다시 그리는 줄이 그것이라,
+        // 문단이 CoreText 자간 상한(`coreTextSpacingLengthLimit`)보다 길어도 이 줄에는 자간이 실린다.
         let naturalLine = CTLineCreateWithAttributedString(substring)
+        let excess = HwpLetterSpacing.lineEndExcess(
+            in: substring, range: NSRange(location: 0, length: substring.length)
+        )
         let naturalWidth = CGFloat(CTLineGetTypographicBounds(naturalLine, nil, nil, nil))
-            - CGFloat(CTLineGetTrailingWhitespaceWidth(naturalLine))
-            - min(0, HwpLetterSpacing.lineEndSpacing(in: attributedString, range: nsRange))
+            - CGFloat(CTLineGetTrailingWhitespaceWidth(naturalLine)) - excess
         let extra = targetWidth - naturalWidth
-        guard extra > 0.25 else { return nil }
+        // 남는 폭이 작으면(≤ 0.25pt) CoreText 프레임 줄을 그대로 그리는데, 줄 끝 자간이 있으면 안
+        // 된다 — 프레임 줄은 그 자간을 넣은 폭을 끝에 맞춰 마지막 글자가 자간만큼 넘친다 (#260 리뷰
+        // 실측: Menlo 12pt −20% 줄의 1.2–1.7%가 정확히 |자간|만큼 넘쳤다). 그때는 작은 여분이라도 빈칸에
+        // 나눈다 (줄바꿈 코어가 자간을 빼고 재면 들어가게 나눴으므로 여분은 0 이상이다).
+        guard extra > 0.25 || (excess != 0 && extra > -0.001) else { return nil }
 
         let kernPerSpace = distributes
             ? extra / CGFloat(stretchRanges.count + 1)
@@ -121,14 +130,16 @@ public enum HwpWordJustification {
     /// 늘릴 빈칸이 없는 줄 — CoreText가 프레임에서 글자 사이로 벌리는데, 마지막 글자의 음수 자간을 넣고
     /// 폭을 맞추므로 마지막 글자가 오른쪽 끝을 그 자간만큼 넘는다 (#260, 실측: Apple SD 산돌고딕 Neo
     /// 20pt 한글 자간 −3.46pt 줄을 200pt에 맞추면 마지막 글자 끝이 203.46pt). 한글은 마지막 글자에 자간을
-    /// 주지 않으므로 그 자간만큼 좁은 폭으로 다시 벌린다. 음수 자간이 아니거나 이미 넘치는 줄은 nil —
-    /// CoreText의 줄 그대로다.
+    /// 주지 않으므로 그 자간만큼 좁은 폭으로 다시 벌린다 (컨트롤 표식에 막혀 매달리지 않은 양수 자간이면
+    /// 그만큼 넓게). CoreText가 줄 폭에 넣은 줄 끝 자간(`HwpLetterSpacing.lineEndExcess`)이 없거나 이미
+    /// 넘치는 줄은 nil — CoreText의 줄 그대로다.
     private static func lineEndSpacingJustified(
-        _ substring: NSAttributedString, range: NSRange, in attributedString: NSAttributedString,
-        targetWidth: CGFloat
+        _ substring: NSAttributedString, targetWidth: CGFloat
     ) -> (line: CTLine, xOffset: CGFloat)? {
-        let spacing = HwpLetterSpacing.lineEndSpacing(in: attributedString, range: range)
-        guard spacing < 0 else { return nil }
+        let spacing = HwpLetterSpacing.lineEndExcess(
+            in: substring, range: NSRange(location: 0, length: substring.length)
+        )
+        guard spacing != 0 else { return nil }
         let line = CTLineCreateWithAttributedString(substring)
         let width = targetWidth + spacing
         let content = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))

@@ -368,44 +368,101 @@ enum HwpLetterSpacing {
         return false
     }
 
-    /// 줄(`range`)의 마지막 **내용** 글자 — 뒤 공백(빈칸·탭·줄 나눔)을 뺀 마지막 글자 — 의 자간
-    /// (pt, 없으면 0). 자간 표식(`HwpAttributedStringKey.letterSpacing`)이 있는 글자의 tracking, 없으면
-    /// kern이다 — 자간 chunk의 공백 아닌 글자에는 자간 말고 kern을 싣는 것이 없다.
+    /// CoreText가 자간(kern·tracking)을 적용하는 조판 문자열 길이의 상한 (UTF-16 단위). 이보다 긴
+    /// 문자열은 CoreText가 typesetter·framesetter 모두에서 kern·tracking을 **통째로** 무시한다 (실측
+    /// macOS 27: 10,240자 Apple SD 산돌고딕 Neo 한글 음절열의 kern −1이 적용되고 10,241자부터 글자마다·
+    /// 일정 kern·tracking 모두 0 — 문자열 안의 줄 나눔과도 무관). 그런 문단은 자간 없이 그려지므로 줄
+    /// 끝 자간 보정(`lineEndExcess`)도 하지 않는다 — 하면 적용되지 않은 자간을 빼서 들어가는 줄을
+    /// 나눈다 (#260 리뷰).
+    static let coreTextSpacingLengthLimit = 10240
+
+    /// 줄(`range`)의 마지막 **내용** 글자의 자간과, 그 글자 뒤에 폭 0 컨트롤 표식이 있는지.
     ///
-    /// 한글은 줄의 마지막 글자에 자간을 주지 않는다 (#260 실측: 오른쪽·가운데·양쪽 정렬과 줄 맞춤이
-    /// 모두 마지막 글자를 자간 없는 전진량으로 잰다 — Menlo 20pt `abcd` 라틴 자간 ±20% 오른쪽
-    /// 정렬에서 `d`가 오른쪽 끝 − 12.04pt(자간 없는 전진량), 왼쪽 여백으로 줄 폭을 0.5pt씩 바꾼
-    /// 표본의 줄 나눔 경계가 자간 생략 모델과 일치). 양수 자간은 tracking이라 CoreText도 줄 끝에서
-    /// 매달리는 공백처럼 빼고 재므로 같지만, 음수는 kern·tracking 모두 넣고 재서 줄 맞춤·정렬이 이
-    /// 값만큼 갈린다 — 그래서 줄바꿈 코어(`HwpLineBreaker`)와 양쪽 정렬(`HwpWordJustification`)이 이
-    /// 값을 본다.
-    static func lineEndSpacing(in attributedString: NSAttributedString, range: NSRange) -> CGFloat {
+    /// 마지막 내용 글자는 뒤 공백(`isLineEndWhitespace`)과 폭 0 컨트롤 표식(`isZeroWidthControlMarker`
+    /// — 필드 끝·책갈피 등)을 걷어 낸 마지막 글자다. 한글은 줄 끝 자간 규칙에서 그 표식을 없는 것으로
+    /// 본다 (#260 리뷰 실측, 한글 12.30.0 build 6523: Menlo 20pt 라틴 자간 ±20% 오른쪽 정렬 `abcd` 뒤에
+    /// 하이퍼링크 끝·책갈피를 둬도 `d`가 표식 없는 문단과 같은 498.24pt, 줄 폭 387.5pt의 −20% `aaaaa`
+    /// 줄 나눔도 링크 유무와 같은 6단어). 자간은 자간 표식(`HwpAttributedStringKey.letterSpacing`)이 있는
+    /// 글자의 tracking, 없으면 kern이다 — 자간 chunk의 공백 아닌 글자에는 자간 말고 kern을 싣는 것이 없다.
+    static func lineEnd(
+        in attributedString: NSAttributedString, range: NSRange
+    ) -> (spacing: CGFloat, followedByControl: Bool) {
         let string = attributedString.string as NSString
         var end = min(NSMaxRange(range), string.length)
-        while end > range.location, isLineEndWhitespace(string.character(at: end - 1)) {
-            end -= 1
+        var followedByControl = false
+        while end > range.location {
+            let unit = string.character(at: end - 1)
+            if isLineEndWhitespace(unit) {
+                end -= 1
+            } else if isZeroWidthControlMarker(unit, in: attributedString, at: end - 1) {
+                followedByControl = true
+                end -= 1
+            } else {
+                break
+            }
         }
         guard end > range.location,
               attributedString.attribute(
                   HwpAttributedStringKey.letterSpacing, at: end - 1, effectiveRange: nil
               ) != nil
-        else { return 0 }
+        else { return (0, followedByControl) }
         for carrier in [Carrier.tracking, .kern] {
             if let value = attributedString.attribute(carrier.key, at: end - 1, effectiveRange: nil)
                 as? NSNumber
             {
-                return CGFloat(value.doubleValue)
+                return (CGFloat(value.doubleValue), followedByControl)
             }
         }
-        return 0
+        return (0, followedByControl)
     }
 
-    /// 문자열의 마지막 내용 글자(뒤 공백을 뺀 마지막 묶음)에서 자간을 걷는다 — 문단 번호 라벨의
-    /// 마지막 글자 (`appendNumberingHeading`). 운반 속성이 어느 쪽이든 kern 0·tracking 없음이 된다.
+    /// 줄(`range`)의 마지막 내용 글자의 자간 (pt, 없으면 0) — `lineEnd`의 값.
+    static func lineEndSpacing(in attributedString: NSAttributedString, range: NSRange) -> CGFloat {
+        lineEnd(in: attributedString, range: range).spacing
+    }
+
+    /// 줄의 마지막 내용 글자 자간 중 **CoreText가 줄 폭에 넣고 잰** 몫 (pt, 없으면 0).
+    ///
+    /// 한글은 줄의 마지막 글자에 자간을 주지 않는다 (#260 실측: 오른쪽·가운데·양쪽 정렬과 줄 맞춤이
+    /// 모두 마지막 글자를 자간 없는 전진량으로 잰다 — Menlo 20pt `abcd` 라틴 자간 ±20% 오른쪽
+    /// 정렬에서 `d`가 오른쪽 끝 − 12.04pt(자간 없는 전진량), 왼쪽 여백으로 줄 폭을 0.5pt씩 바꾼
+    /// 표본의 줄 나눔 경계가 자간 생략 모델과 일치). CoreText는 줄 끝 글자의 양수 tracking을 줄 끝
+    /// 공백처럼 매달아 이미 빼고 재므로 그 몫은 0이다. 음수(kern·tracking)는 넣고 재고, 양수도 뒤에
+    /// 폭 0 컨트롤 표식이 있으면 매달지 못해 넣고 잰다 — 그 둘이 줄바꿈 코어(`HwpLineBreaker`)·한 줄
+    /// 허용 정렬(`HwpDrawnTextLayout.slightOverflowAlignmentOffset`)·양쪽 정렬(`HwpWordJustification`)이
+    /// 빼는 값이다. 문자열이 `coreTextSpacingLengthLimit`보다 길면 CoreText가 자간을 적용하지 않았으므로 0.
+    static func lineEndExcess(in attributedString: NSAttributedString, range: NSRange) -> CGFloat {
+        guard attributedString.length <= coreTextSpacingLengthLimit else { return 0 }
+        let end = lineEnd(in: attributedString, range: range)
+        return end.spacing < 0 || end.followedByControl ? end.spacing : 0
+    }
+
+    /// 폭 0 컨트롤 표식 — 개체가 아닌 컨트롤(필드 시작·끝, 책갈피 등)의 U+FFFC
+    /// (`HwpTextRunBuilder.appendControlMarker`, 폭 0 run delegate). 글자처럼 취급 개체의 표식은
+    /// `inlineObjectHeight`를 지녀 내용 글자다.
+    static func isZeroWidthControlMarker(
+        _ unit: UniChar, in attributedString: NSAttributedString, at index: Int
+    ) -> Bool {
+        unit == 0xFFFC
+            && attributedString.attribute(
+                HwpAttributedStringKey.controlIndex, at: index, effectiveRange: nil
+            ) != nil
+            && attributedString.attribute(
+                HwpAttributedStringKey.inlineObjectHeight, at: index, effectiveRange: nil
+            ) == nil
+    }
+
+    /// 문자열의 마지막 내용 글자(뒤 공백·폭 0 컨트롤 표식을 뺀 마지막 묶음)에서 자간을 걷는다 — 문단
+    /// 번호 라벨의 마지막 글자 (`appendNumberingHeading`). 운반 속성이 어느 쪽이든 kern 0·tracking 없음이
+    /// 된다.
     static func removeLastCharacterSpacing(in string: NSMutableAttributedString) {
         let text = string.string as NSString
         var end = text.length
-        while end > 0, isLineEndWhitespace(text.character(at: end - 1)) {
+        while end > 0 {
+            let unit = text.character(at: end - 1)
+            guard isLineEndWhitespace(unit)
+                || isZeroWidthControlMarker(unit, in: string, at: end - 1)
+            else { break }
             end -= 1
         }
         guard end > 0 else { return }
