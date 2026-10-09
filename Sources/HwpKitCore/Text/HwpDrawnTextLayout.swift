@@ -136,7 +136,8 @@ public enum HwpDrawnTextLayout {
         let replacement = HwpWordJustification.justifiedLine(
             frameLine: frameLine,
             attributedString: attributedString,
-            availableWidth: lineWidth - placement.ctOriginX
+            availableWidth: lineWidth - placement.ctOriginX,
+            lineOriginX: placement.ctOriginX
         )
         let range = CTLineGetStringRange(frameLine)
         let finalLine = replacement?.line ?? frameLine

@@ -225,6 +225,136 @@ import XCTest
             expect(lines.contains("description sentence\tend value ")) == true
         }
 
+        /// Menlo 12pt 자간 −20%, 양쪽 정렬·왼쪽 여백 `headIndent`·탭 간격 28pt의 조판 문자열 (글자 모양 헬퍼를
+        /// 거치지 않고 문단 구분자·탭을 그대로 싣는다).
+        private static func justifiedSpaced(_ text: String, headIndent: CGFloat) -> NSAttributedString {
+            var alignment = CTTextAlignment.justified
+            var indent = headIndent
+            var tabInterval: CGFloat = 28
+            let style = withUnsafePointer(to: &alignment) { alignment in
+                withUnsafePointer(to: &indent) { indent in
+                    withUnsafePointer(to: &tabInterval) { tabInterval in
+                        CTParagraphStyleCreate([
+                            CTParagraphStyleSetting(
+                                spec: .alignment, valueSize: MemoryLayout<CTTextAlignment>.size,
+                                value: alignment
+                            ),
+                            CTParagraphStyleSetting(
+                                spec: .firstLineHeadIndent, valueSize: MemoryLayout<CGFloat>.size,
+                                value: indent
+                            ),
+                            CTParagraphStyleSetting(
+                                spec: .headIndent, valueSize: MemoryLayout<CGFloat>.size, value: indent
+                            ),
+                            CTParagraphStyleSetting(
+                                spec: .defaultTabInterval, valueSize: MemoryLayout<CGFloat>.size,
+                                value: tabInterval
+                            ),
+                        ], 4)
+                    }
+                }
+            }
+            return HwpTextRunBuilder.letterSpacedString(text, attributes: [
+                kCTFontAttributeName as NSAttributedString.Key:
+                    CTFontCreateWithName("Menlo-Regular" as CFString, 12, nil),
+                kCTParagraphStyleAttributeName as NSAttributedString.Key: style,
+            ], ratio: -0.2)
+        }
+
+        func testParagraphSeparatorEndsTheJustifiedParagraph() throws {
+            // LF·CR·U+2029로 끝나는 줄은 (CoreText) 문단의 마지막 줄이라 양쪽 정렬로 벌리지 않는다 — LF만 보면
+            // U+2029로 끝나는 첫 문단 줄이 200pt 끝까지 벌어졌다 (#260 리뷰 실측: 줄 폭 23.12 → 198.56pt).
+            for separator in ["\n", "\r", "\u{2029}"] {
+                let attributed = Self.justifiedSpaced("abcd" + separator + "efgh", headIndent: 0)
+                let line = try XCTUnwrap(HwpDrawnTextLayout.lines(
+                    attributedString: attributed, origin: .zero, lineWidth: 200
+                ).first)
+                expect(line.stringRange) == NSRange(location: 0, length: 5)
+                expect(Self.glyphOrigin(of: 3, in: line)).to(
+                    beCloseTo(3 * menloA * 0.8, within: 0.01),
+                    description: separator.debugDescription
+                )
+            }
+        }
+
+        /// 들여쓴(20pt) 양쪽 정렬 탭 문단 `aa→bb→cc→…`.
+        private static var indentedTabParagraph: NSAttributedString {
+            justifiedSpaced(
+                Array(repeating: "aa\tbb\tcc", count: 6).joined(separator: "\t"), headIndent: 20
+            )
+        }
+
+        /// `line`(문자열 위치 `location`에서 시작, 원점 x `originX`)의 탭 바로 뒤 글리프가 프레임 왼쪽 끝 기준
+        /// 탭 자리(28pt 간격)에 있는가. 다시 조판한 줄은 문자열 위치가 부분 문자열 기준(0부터)이다. 줄 머리
+        /// 글자는 앞 줄 끝 탭 뒤라도 탭 자리가 아니라 줄 머리 자리라 빼고, 잰 글리프가 없으면 실패한다.
+        private static func expectTabbedGlyphsOnStops(
+            _ line: CTLine, location: Int, originX: CGFloat, in string: NSString, _ label: String
+        ) {
+            let base = CTLineGetStringRange(line).location
+            var origins: [CGFloat] = []
+            for run in CTLineGetGlyphRuns(line) as? [CTRun] ?? [] {
+                let count = CTRunGetGlyphCount(run)
+                var positions = [CGPoint](repeating: .zero, count: count)
+                var indices = [CFIndex](repeating: 0, count: count)
+                CTRunGetPositions(run, CFRange(location: 0, length: count), &positions)
+                CTRunGetStringIndices(run, CFRange(location: 0, length: count), &indices)
+                for (position, index) in zip(positions, indices)
+                    where index > base && string.character(at: index - base + location - 1) == 0x09
+                {
+                    origins.append(originX + position.applying(CTRunGetTextMatrix(run)).x)
+                }
+            }
+            expect(origins.isEmpty).to(beFalse(), description: label)
+            for origin in origins {
+                let stop = (origin / 28).rounded() * 28
+                expect(origin).to(beCloseTo(stop, within: 0.01), description: label)
+            }
+        }
+
+        func testJustifiedTabLinesKeepTheFrameTabStops() {
+            // 들여쓴 양쪽 정렬 문단의 탭 줄을 다시 조판하면 프레임 안 줄 머리 자리에서 조판한다 — 0에서 조판하면
+            // 탭 뒤 글자가 들여쓰기만큼 앞 탭 자리로 당겨졌다 (#260 리뷰 실측: 왼쪽 여백 20pt 줄의 `bb`가 56 →
+            // 48pt).
+            let attributed = Self.indentedTabParagraph
+            let lines = HwpDrawnTextLayout.lines(
+                attributedString: attributed, origin: .zero, lineWidth: 208
+            )
+            expect(lines.count) > 1
+            for line in lines {
+                Self.expectTabbedGlyphsOnStops(
+                    line.line, location: line.stringRange.location, originX: line.baselineOrigin.x,
+                    in: attributed.string as NSString, "\(line.stringRange)"
+                )
+            }
+        }
+
+        func testPublicJustificationKeepsTheFrameTabStops() {
+            // 공개 진입점은 줄 머리 자리를 문단 스타일에서 얻는다 — 렌더와 같은 자리다. CoreText 프레임 줄을
+            // 그대로 받으므로 마지막 글자 자간을 빼도 들어가는 폭(216pt)에서 잰다 (208pt 프레임 줄은 넘쳐 nil).
+            let attributed = Self.indentedTabParagraph
+            let frame = CTFramesetterCreateFrame(
+                CTFramesetterCreateWithAttributedString(attributed), CFRange(),
+                CGPath(rect: CGRect(x: 0, y: 0, width: 216, height: 10000), transform: nil), nil
+            )
+            let frameLines = CTFrameGetLines(frame) as? [CTLine] ?? []
+            var origins = [CGPoint](repeating: .zero, count: frameLines.count)
+            CTFrameGetLineOrigins(frame, CFRange(), &origins)
+            var replaced = 0
+            for (frameLine, origin) in zip(frameLines, origins) {
+                guard let line = HwpWordJustification.wordJustifiedLine(
+                    frameLine: frameLine, attributedString: attributed,
+                    availableWidth: 216 - origin.x
+                ) else { continue }
+                replaced += 1
+                let location = CTLineGetStringRange(frameLine).location
+                Self.expectTabbedGlyphsOnStops(
+                    line, location: location, originX: origin.x,
+                    in: attributed.string as NSString, "\(location)"
+                )
+            }
+            expect(replaced) > 0
+        }
+
         func testJustifiedLineWithASmallExtraStillEndsAtTheMargin() throws {
             // 남는 폭이 0.25pt 이하인 양쪽 정렬 줄도 마지막 글자 + 자간 없는 전진량이 오른쪽 끝이다 — CoreText
             // 프레임 줄을 그대로 그리면 마지막 글자가 자간만큼 넘친다.
