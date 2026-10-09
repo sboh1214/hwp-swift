@@ -403,6 +403,106 @@ import XCTest
             expect(drawn.map(\.stringRange)) == ranges
         }
 
+        /// Apple SD 산돌고딕 Neo `가나다라마바` — 글자마다 크기 80·40.5·20.5·10.5·5.5·3pt, 한글 자간 −50%.
+        private static var shrinkingSizes: NSAttributedString {
+            let string = NSMutableAttributedString()
+            let sizes: [CGFloat] = [80, 40.5, 20.5, 10.5, 5.5, 3]
+            for (character, size) in zip(["가", "나", "다", "라", "마", "바"], sizes) {
+                string.append(HwpTextRunBuilder.letterSpacedString(character, attributes: [
+                    kCTFontAttributeName as NSAttributedString.Key:
+                        CTFontCreateWithName("AppleSDGothicNeo-Regular" as CFString, size, nil),
+                ], ratio: -0.5))
+            }
+            return string
+        }
+
+        /// 줄의 한글식 폭 — 내용 폭에서 마지막 글자의 음수 자간을 뺀다.
+        private static func hangulWidth(
+            of line: CTLine, range: NSRange, in string: NSAttributedString
+        ) -> CGFloat {
+            HwpLineBreaker.contentWidth(of: line)
+                - min(0, HwpLetterSpacing.lineEndExcess(in: string, range: range))
+        }
+
+        func testRefitKeepsLookingPastTheFixedPointBudget() throws {
+            // 크기가 줄어드는 글자열은 마지막 글자가 바뀔 때마다 빼는 자간이 커져 고정점 반복이 한 자리씩만 당긴다 —
+            // 네 번 만에 수렴하지 못해 두 글자 줄(69.6325pt)이 69.21pt 줄 폭에 확정됐다 (#260 PR 리뷰). 한 글자는
+            // 69.2pt로 들어간다. 한글 12.30도 같은 구성의 69.42pt 줄에 `가` 한 글자만 둔다(실측, 2026-10-09).
+            let string = Self.shrinkingSizes
+            for width: CGFloat in [69.21, 69.42] {
+                let lines = HwpDrawnTextLayout.lines(
+                    attributedString: string, origin: .zero, lineWidth: width
+                )
+                let first = try XCTUnwrap(lines.first)
+                expect(first.stringRange.length).to(equal(1), description: "\(width)")
+                expect(Self.hangulWidth(of: first.line, range: first.stringRange, in: string))
+                    .to(beLessThanOrEqualTo(width), description: "\(width)")
+            }
+        }
+
+        func testRefitKeepsOnlyTheFirstCharacterWhenNothingFits() throws {
+            // 첫 글자만으로도 넘쳐 어느 줄 나눔 자리도 들지 않으면 첫 묶음만 둔다 — 한글 12.30 실측(2026-10-09):
+            // Apple SD 산돌고딕 Neo `가…차` 96·45·21·10·4.7·2.2·1·1·1·1pt 자간 −50% 뒤 20pt `하` × 12, 줄 폭
+            // 76.5·77.5·78.0pt 모두 첫 줄이 `가`. 고정점 반복의 넷째 후보로 되돌아가면 77.5pt에서 `가나`(80.445pt)가
+            // 확정됐다 — 결과가 반복 상한에 좌우됐다 (#260 PR 리뷰 적대 검토).
+            let string = NSMutableAttributedString()
+            let sizes: [CGFloat] = [96, 45, 21, 10, 4.7, 2.2, 1, 1, 1, 1]
+            let characters = ["가", "나", "다", "라", "마", "바", "사", "아", "자", "차"]
+            for (character, size) in zip(characters, sizes) {
+                string.append(HwpTextRunBuilder.letterSpacedString(character, attributes: [
+                    kCTFontAttributeName as NSAttributedString.Key:
+                        CTFontCreateWithName("AppleSDGothicNeo-Regular" as CFString, size, nil),
+                ], ratio: -0.5))
+            }
+            string.append(HwpTextRunBuilder.letterSpacedString(
+                String(repeating: "하", count: 12),
+                attributes: [kCTFontAttributeName as NSAttributedString.Key:
+                    CTFontCreateWithName("AppleSDGothicNeo-Regular" as CFString, 20, nil)],
+                ratio: -0.5
+            ))
+            for width: CGFloat in [76.5, 77.5, 78.0] {
+                let first = try XCTUnwrap(HwpDrawnTextLayout.lines(
+                    attributedString: string, origin: .zero, lineWidth: width
+                ).first)
+                expect(first.stringRange).to(
+                    equal(NSRange(location: 0, length: 1)), description: "\(width)"
+                )
+            }
+        }
+
+        func testRefitNeverCommitsAnOverflowingLineThatCouldBeShorter() throws {
+            // 줄 폭을 0.25pt씩 바꿔도 공유 코어가 커밋하는 줄은 모두 한글식 폭이 줄 폭 안이다 — 더 짧게 나눌 수
+            // 없는 한 글자 줄만 예외다. 측정도 같은 줄이다.
+            let string = Self.shrinkingSizes
+            var width: CGFloat = 40
+            while width <= 100 {
+                let chunk = try XCTUnwrap(HwpLineBreaker.nextFrameChunk(
+                    framesetter: CTFramesetterCreateWithAttributedString(string),
+                    typesetter: CTTypesetterCreateWithAttributedString(string),
+                    attributedString: string, startLocation: 0, fullLength: string.length,
+                    remainingLineBudget: HwpParagraphLayout.maximumLineFrames, lineWidth: width
+                ))
+                for line in chunk.lines.prefix(chunk.keepCount) {
+                    let range = CTLineGetStringRange(line)
+                    let nsRange = NSRange(location: range.location, length: range.length)
+                    guard nsRange.length > 1 else { continue }
+                    expect(Self.hangulWidth(of: line, range: nsRange, in: string))
+                        .to(beLessThanOrEqualTo(width + 0.001), description: "\(width) \(nsRange)")
+                }
+                let measured = HwpParagraphLayout().layout(
+                    attributedString: string,
+                    paraShape: CoreHwp.HwpParaShape(property1: 1 << 2, marginLeft: 0, tabDefId: 0),
+                    columnWidth: width
+                )
+                let drawn = HwpDrawnTextLayout.lines(
+                    attributedString: string, origin: .zero, lineWidth: width
+                )
+                expect(measured.lines.map(\.attributedRange))
+                    .to(equal(drawn.map(\.stringRange)), description: "\(width)")
+                width += 0.25
+            }
+        }
+
         func testRefitDoesNotCommitTheBudgetCutLine() throws {
             // 예산이 자른 청크를 줄 끝 자간으로 다시 나누면 남은 덜 찬 줄을 커밋하지 않고 다음 호출로
             // 넘긴다 — 커밋하면 줄이 낱말 가운데(예산 경계)에서 끊긴다.

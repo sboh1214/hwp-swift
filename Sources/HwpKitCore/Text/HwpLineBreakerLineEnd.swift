@@ -165,7 +165,9 @@ extension HwpLineBreaker {
     }
 
     /// 마지막 글자의 자간을 빼고 재도 가용 폭 안에 드는 줄 길이 — CoreText의 줄(`length`)보다
-    /// 짧은 것만 준다. 마지막 글자가 바뀌면 그 자간도 바뀌므로 몇 번 다시 잰다.
+    /// 짧은 것만 준다. 마지막 글자가 바뀌면 그 자간도 바뀌므로 몇 번 다시 잰다. 그래도 넘치면 줄 나눔
+    /// 자리를 하나씩 앞으로 옮겨 들어가는 줄을 찾고, 어느 자리도 들지 않으면 첫 묶음만 둔다(`fittingBreak`) —
+    /// 들어가는 자리가 있는데 넘치는 줄을 확정하지 않고, 결과가 반복 상한에 좌우되지 않는다.
     ///
     /// 줄은 **실제 줄 머리 자리**(`measure.offset` — 첫 줄·이어지는 줄 들여쓰기)에서 잰다 (#260 리뷰).
     /// CoreText는 탭 자리를 프레임 왼쪽 끝 기준으로 잡으므로, 들여쓴 문단의 탭 있는 줄을 0에서 재면
@@ -183,18 +185,71 @@ extension HwpLineBreaker {
             )
             guard candidate > 0, candidate < (best ?? length) else { break }
             best = candidate
+            let fit = lineEndFit(
+                start: start, length: candidate, measure: measure, context: context
+            )
+            if fit.fits {
+                return candidate
+            }
+            lastExcess = fit.excess
+        }
+        // 고정점 반복은 줄 나눔 자리를 한 번에 하나씩 당기는데, 크기가 급격히 줄어드는 글자열은 작은 끝 글자를
+        // 떼면 그 앞 큰 글자의 음수 자간이 되살아나 마지막 글자 자간을 뺀 폭이 오히려 늘어서 들어가는 자리가 네
+        // 자리보다 멀리 있다 — 상한(4번) 안에 닿지 못한다 (#260 PR 리뷰 실측: Apple SD 산돌고딕 Neo
+        // `가나다라마바` 80·40.5·20.5·10.5·5.5·3pt 자간 −50%, 줄 폭 69.21pt에서 두 글자 줄 69.6325pt가 확정됐다 —
+        // 한 글자는 69.2pt로 들어간다. 한글 12.30도 69.42pt에서 `가` 한 글자다). 반복이 끝나도 넘치면 줄 나눔
+        // 자리를 하나씩 앞으로 옮겨 들어가는 가장 가까운 자리를, 없으면 첫 묶음을 고른다. CoreText 줄 그대로
+        // 들어가면(`best == nil`) 다시 잴 것이 없다 — 이 검사가 그 줄을 걸러야 한다(프레임 줄이 typesetter 줄보다
+        // 넓게 재지는 실문서 줄이 대부분 이 갈래다).
+        let reached = best ?? length
+        if lineEndFit(start: start, length: reached, measure: measure, context: context).fits {
+            return best
+        }
+        return fittingBreak(
+            below: reached, start: start, measure: measure, context: context
+        ) ?? best
+    }
+
+    /// `[start, start + length)` 줄이 마지막 글자의 음수 자간을 빼고 재도 가용 폭 안에 드는지와 그 자간.
+    private static func lineEndFit(
+        start: Int, length: Int, measure: LineMeasure, context: RefitContext
+    ) -> (fits: Bool, excess: CGFloat) {
+        let line = CTTypesetterCreateLineWithOffset(
+            context.typesetter, CFRange(location: start, length: length), Double(measure.offset)
+        )
+        let excess = min(0, HwpLetterSpacing.lineEndExcess(
+            in: context.attributedString, range: NSRange(location: start, length: length)
+        ))
+        return (contentWidth(of: line) - excess <= measure.available + lineEndTolerance, excess)
+    }
+
+    /// `length`보다 앞의 줄 나눔 자리를 가까운 것부터 하나씩 짚어, 마지막 글자 자간을 빼고 재도 가용 폭에
+    /// 드는 첫 자리. 어느 자리도 들지 않으면 짚은 가장 짧은 자리(첫 묶음)다 — 한글은 줄을 앞에서부터 채워
+    /// 둘째 글자가 들지 않으면 첫 글자만 둔다 (한글 12.30 실측, 2026-10-09: Apple SD 산돌고딕 Neo `가…차`
+    /// 96·45·21·10·4.7·2.2·1·1·1·1pt 자간 −50% 뒤 20pt `하`를 이은 문단 — 첫 글자만으로도 넘치는 76.5–78.0pt에서
+    /// 첫 줄이 `가`). 앞으로 옮길 자리가 없으면 nil. 다음 자리는 지금 줄의 CoreText 폭보다 조금 좁은 폭으로
+    /// CoreText에 묻는다(그 폭에 드는 가장 긴 줄 나눔이 바로 앞 자리다 — 첫 묶음보다 좁으면 첫 묶음을 준다).
+    /// 자리가 매번 앞으로만 가므로 끝난다.
+    private static func fittingBreak(
+        below length: Int, start: Int, measure: LineMeasure, context: RefitContext
+    ) -> Int? {
+        var current = length
+        while current > 1 {
             let line = CTTypesetterCreateLineWithOffset(
-                context.typesetter, CFRange(location: start, length: candidate),
+                context.typesetter, CFRange(location: start, length: current),
                 Double(measure.offset)
             )
-            lastExcess = min(0, HwpLetterSpacing.lineEndExcess(
-                in: context.attributedString, range: NSRange(location: start, length: candidate)
-            ))
-            if contentWidth(of: line) - lastExcess <= measure.available + lineEndTolerance {
-                break
+            let previous = CTTypesetterSuggestLineBreakWithOffset(
+                context.typesetter, start, Double(contentWidth(of: line) - lineEndTolerance),
+                Double(measure.offset)
+            )
+            guard previous > 0, previous < current else { break }
+            current = previous
+            if lineEndFit(start: start, length: current, measure: measure, context: context).fits {
+                return current
             }
         }
-        return best
+        return current < length ? current : nil
     }
 
     /// 줄 끝 자간의 오른쪽·가운데 정렬 줄 — 한글은 마지막 글자의 자간을 뺀 폭으로 정렬한다
