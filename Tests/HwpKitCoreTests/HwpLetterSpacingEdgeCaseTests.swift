@@ -43,15 +43,58 @@ import XCTest
             expect(HwpLetterSpacing.isLineEndWhitespace(0x200B)) == false
         }
 
-        /// 폭 0 컨트롤 표식(필드 끝·책갈피) — `HwpTextRunBuilder.appendControlMarker`와 같은 속성.
-        private static func controlMarker(_ font: CTFont) -> NSAttributedString {
-            var attributes: [NSAttributedString.Key: Any] = [
-                fontKey: font, HwpAttributedStringKey.controlIndex: NSNumber(value: 0),
-            ]
-            if let delegate = HwpInlineObjectReservation.runDelegate(width: 0, height: 0) {
-                attributes[kCTRunDelegateAttributeName as NSAttributedString.Key] = delegate
+        /// 폭 0 컨트롤 표식 — `HwpTextRunBuilder.appendControlMarker`와 같은 속성(빌더 마커 표식 + 폭 0 delegate,
+        /// `attachMarkerDelegate`). extended 컨트롤(책갈피·필드 시작)은 `controlIndex`를 지니고, inline 컨트롤(필드
+        /// 끝 — 하이퍼링크 끝)은 지니지 않는다.
+        private static func controlMarker(
+            _ font: CTFont, controlIndex: Int? = 0
+        ) -> NSAttributedString {
+            var attributes: [NSAttributedString.Key: Any] = [fontKey: font]
+            if let controlIndex {
+                attributes[HwpAttributedStringKey.controlIndex] = NSNumber(value: controlIndex)
             }
+            HwpInlineObjectReservation.attachMarkerDelegate(size: .zero, to: &attributes)
             return NSAttributedString(string: "\u{FFFC}", attributes: attributes)
+        }
+
+        func testZeroWidthControlMarkerIsJudgedByTheBuilderMarkerKey() {
+            // 판별은 빌더 마커 표식과 예약 높이 없음이다 (#260 PR 리뷰) — `controlIndex` 유무와 무관하고(필드 끝은
+            // inline이라 없다), 예약 높이는 값이 아니라 유무다(다시 쓴 높이가 0이어도 개체다). 표식 없는 U+FFFC —
+            // 호스트가 단 delegate 첨부, 문서 본문 글자 — 와 U+FFFC가 아닌 글자는 표식이 아니다.
+            let font = Self.menlo()
+            func judged(
+                _ attributes: [NSAttributedString.Key: Any], _ text: String = "\u{FFFC}"
+            ) -> Bool {
+                let string = NSAttributedString(string: text, attributes: attributes)
+                return HwpLetterSpacing.isZeroWidthControlMarker(
+                    (string.string as NSString).character(at: 0), in: string, at: 0
+                )
+            }
+            func marker(
+                _ size: CGSize, _ extra: [NSAttributedString.Key: Any] = [:]
+            ) -> [NSAttributedString.Key: Any] {
+                var attributes: [NSAttributedString.Key: Any] = [Self.fontKey: font]
+                HwpInlineObjectReservation.attachMarkerDelegate(size: size, to: &attributes)
+                return attributes.merging(extra) { _, new in new }
+            }
+            let heightKey = HwpAttributedStringKey.inlineObjectHeight
+            let object = CGSize(width: 20, height: 10)
+            expect(judged(marker(.zero))) == true
+            let indexed = [HwpAttributedStringKey.controlIndex: NSNumber(value: 3)]
+            expect(judged(marker(.zero, indexed))) == true
+            expect(judged(marker(object, [heightKey: NSNumber(value: 10)]))) == false
+            expect(judged(marker(object, [heightKey: NSNumber(value: 0)]))) == false
+            // 호스트 delegate 첨부: 폭 0 delegate만으로는 표식이 아니다.
+            let hostDelegate = HwpInlineObjectReservation.runDelegate(width: 0, height: 0) as Any
+            expect(judged([
+                Self.fontKey: font,
+                kCTRunDelegateAttributeName as NSAttributedString.Key: hostDelegate,
+            ])) == false
+            expect(judged([Self.fontKey: font])) == false
+            expect(judged([
+                Self.fontKey: font, HwpAttributedStringKey.controlIndex: NSNumber(value: 3),
+            ])) == false
+            expect(judged(marker(.zero), "a")) == false
         }
 
         func testLineEndSkipsZeroWidthControlMarkers() {
@@ -60,18 +103,20 @@ import XCTest
             let font = Self.menlo()
             let expected = Self.advance(0x64, in: font) * 0.2
             for ratio: CGFloat in [-0.2, 0.2] {
-                let string = NSMutableAttributedString(
-                    attributedString: HwpTextRunBuilder.letterSpacedString(
-                        "abcd", attributes: [Self.fontKey: font], ratio: ratio
+                for controlIndex: Int? in [0, nil] {
+                    let string = NSMutableAttributedString(
+                        attributedString: HwpTextRunBuilder.letterSpacedString(
+                            "abcd", attributes: [Self.fontKey: font], ratio: ratio
+                        )
                     )
-                )
-                string.append(Self.controlMarker(font))
-                string.append(NSAttributedString(string: " ", attributes: [Self.fontKey: font]))
-                let range = NSRange(location: 0, length: string.length)
-                let end = HwpLetterSpacing.lineEnd(in: string, range: range)
-                expect(end.spacing).to(beCloseTo(expected * (ratio < 0 ? -1 : 1), within: 1e-9))
-                expect(end.followedByControl) == true
-                expect(HwpLetterSpacing.lineEndExcess(in: string, range: range)) == end.spacing
+                    string.append(Self.controlMarker(font, controlIndex: controlIndex))
+                    string.append(NSAttributedString(string: " ", attributes: [Self.fontKey: font]))
+                    let range = NSRange(location: 0, length: string.length)
+                    let end = HwpLetterSpacing.lineEnd(in: string, range: range)
+                    expect(end.spacing).to(beCloseTo(expected * (ratio < 0 ? -1 : 1), within: 1e-9))
+                    expect(end.followedByControl) == true
+                    expect(HwpLetterSpacing.lineEndExcess(in: string, range: range)) == end.spacing
+                }
             }
             // 표식이 없으면 양수 자간은 CoreText가 매다는 몫이라 excess가 0이다.
             let plain = HwpTextRunBuilder.letterSpacedString(
@@ -97,30 +142,37 @@ import XCTest
                 Self.fontKey: font, kCTParagraphStyleAttributeName as NSAttributedString.Key: style,
             ]
             for ratio: CGFloat in [-0.2, 0.2] {
-                let string = NSMutableAttributedString(
-                    attributedString: HwpTextRunBuilder.letterSpacedString(
-                        "abcd", attributes: attributes, ratio: ratio
+                for controlIndex: Int? in [0, nil] {
+                    let string = NSMutableAttributedString(
+                        attributedString: HwpTextRunBuilder.letterSpacedString(
+                            "abcd", attributes: attributes, ratio: ratio
+                        )
                     )
-                )
-                let marker = NSMutableAttributedString(attributedString: Self.controlMarker(font))
-                marker.addAttribute(
-                    kCTParagraphStyleAttributeName as NSAttributedString.Key, value: style,
-                    range: NSRange(location: 0, length: 1)
-                )
-                string.append(marker)
-                let lines = HwpDrawnTextLayout.lines(
-                    attributedString: string, origin: .zero, lineWidth: 200
-                )
-                let line = try XCTUnwrap(lines.first)
-                let run = try XCTUnwrap((CTLineGetGlyphRuns(line.line) as? [CTRun])?.first {
-                    let range = CTRunGetStringRange($0)
-                    return (range.location ..< range.location + range.length).contains(3)
-                })
-                let index = 3 - CTRunGetStringRange(run).location
-                var position = CGPoint.zero
-                CTRunGetPositions(run, CFRange(location: index, length: 1), &position)
-                let dEnd = line.baselineOrigin.x + position.x + Self.advance(0x64, in: font)
-                expect(dEnd).to(beCloseTo(200, within: 0.01), description: "\(ratio)")
+                    let marker = NSMutableAttributedString(
+                        attributedString: Self.controlMarker(font, controlIndex: controlIndex)
+                    )
+                    marker.addAttribute(
+                        kCTParagraphStyleAttributeName as NSAttributedString.Key, value: style,
+                        range: NSRange(location: 0, length: 1)
+                    )
+                    string.append(marker)
+                    let lines = HwpDrawnTextLayout.lines(
+                        attributedString: string, origin: .zero, lineWidth: 200
+                    )
+                    let line = try XCTUnwrap(lines.first)
+                    let run = try XCTUnwrap((CTLineGetGlyphRuns(line.line) as? [CTRun])?.first {
+                        let range = CTRunGetStringRange($0)
+                        return (range.location ..< range.location + range.length).contains(3)
+                    })
+                    let index = 3 - CTRunGetStringRange(run).location
+                    var position = CGPoint.zero
+                    CTRunGetPositions(run, CFRange(location: index, length: 1), &position)
+                    let dEnd = line.baselineOrigin.x + position.x + Self.advance(0x64, in: font)
+                    expect(dEnd).to(
+                        beCloseTo(200, within: 0.01),
+                        description: "\(ratio) \(controlIndex.map(String.init) ?? "inline")"
+                    )
+                }
             }
         }
 

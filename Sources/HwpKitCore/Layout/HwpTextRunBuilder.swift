@@ -461,13 +461,8 @@ extension HwpTextRunBuilder {
             }
         }
         // 개체가 아닌 마커 (필드 시작/끝·메모 앵커 등)도 폭 0 delegate를 달아
-        // U+FFFC tofu 글리프가 보이지 않게 한다 (한글.app: 무형 문자)
-        if let delegate = HwpInlineObjectReservation.runDelegate(
-            width: size.width,
-            height: size.height
-        ) {
-            markerAttributes[kCTRunDelegateAttributeName as NSAttributedString.Key] = delegate
-        }
+        // U+FFFC tofu 글리프가 보이지 않게 한다 (한글.app: 무형 문자) — 빌더 마커 표식과 함께.
+        HwpInlineObjectReservation.attachMarkerDelegate(size: size, to: &markerAttributes)
         output.append(NSAttributedString(string: "\u{FFFC}", attributes: markerAttributes))
     }
 

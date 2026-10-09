@@ -139,16 +139,26 @@ final class HwpPageLayerLetterSpacingTests: XCTestCase {
         return string
     }
 
-    /// 폭 0 컨트롤 표식 (필드 끝·책갈피 — `HwpTextRunBuilder.appendControlMarker`).
+    /// 폭 0 컨트롤 표식 — `HwpTextRunBuilder.appendControlMarker`와 같은 속성(빌더 마커 표식 + 폭 0 delegate,
+    /// `attachMarkerDelegate`). 책갈피·필드 시작처럼 `controlIndex`를 지닌 extended 표식이다. 렌더러는
+    /// `controlIndex`·마커 표식을 보지 않고 run 폭으로 가른다 (`lineEndDecorationEdge`).
     private static var controlMarker: NSAttributedString {
         let menlo = CTFontCreateWithName("Menlo-Regular" as CFString, 20, nil)
         var attributes: [NSAttributedString.Key: Any] = [
             Self.font: menlo, HwpAttributedStringKey.controlIndex: NSNumber(value: 0),
         ]
-        if let delegate = HwpInlineObjectReservation.runDelegate(width: 0, height: 0) {
-            attributes[kCTRunDelegateAttributeName as NSAttributedString.Key] = delegate
-        }
+        HwpInlineObjectReservation.attachMarkerDelegate(size: .zero, to: &attributes)
         return NSAttributedString(string: "\u{FFFC}", attributes: attributes)
+    }
+
+    /// 필드 끝(하이퍼링크 끝, inline 코드 4) 표식 — `controlIndex`가 없고 빌더 마커 표식과 폭 0 delegate를
+    /// 지닌다.
+    private static var inlineControlMarker: NSAttributedString {
+        let marker = NSMutableAttributedString(attributedString: controlMarker)
+        marker.removeAttribute(
+            HwpAttributedStringKey.controlIndex, range: NSRange(location: 0, length: 1)
+        )
+        return marker
     }
 
     func testLineEndDecorationEdgeIsTheUnspacedAdvance() {
@@ -174,6 +184,11 @@ final class HwpPageLayerLetterSpacingTests: XCTestCase {
                 .to(beCloseTo(expected, within: 1e-6), description: "\(spacing) LF")
             expect(edge(Self.spacedLine("abcd", spacing: spacing, suffix: Self.controlMarker)))
                 .to(beCloseTo(expected, within: 1e-6), description: "\(spacing) control")
+            let inlineEnded = Self.spacedLine(
+                "abcd", spacing: spacing, suffix: Self.inlineControlMarker
+            )
+            expect(edge(inlineEnded))
+                .to(beCloseTo(expected, within: 1e-6), description: "\(spacing) inline control")
             expect(edge(Self.spacedLine("abcd ", spacing: spacing))).to(beNil())
         }
         // 자간 표식이 없는 run의 tracking은 자간이 아니다.

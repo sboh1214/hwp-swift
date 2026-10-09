@@ -437,15 +437,24 @@ enum HwpLetterSpacing {
         return end.spacing < 0 || end.followedByControl ? end.spacing : 0
     }
 
-    /// 폭 0 컨트롤 표식 — 개체가 아닌 컨트롤(필드 시작·끝, 책갈피 등)의 U+FFFC
-    /// (`HwpTextRunBuilder.appendControlMarker`, 폭 0 run delegate). 글자처럼 취급 개체의 표식은
-    /// `inlineObjectHeight`를 지녀 내용 글자다.
+    /// 폭 0 컨트롤 표식 — 개체가 아닌 컨트롤(필드 시작·끝, 책갈피 등)의 U+FFFC. 판별은 빌더 마커 표식
+    /// (`HwpAttributedStringKey.controlMarker` — 빌더가 run delegate와 함께 다는 열쇠)과 예약 높이 없음이다.
+    /// `controlIndex`로 가르면 안 된다 — extended 컨트롤(필드 시작·책갈피·구역 정의 등)에만 있고 필드 끝
+    /// (하이퍼링크 끝 포함)은 inline 컨트롤(코드 4)이라 없어, 줄 끝 링크 끝에서 `lineEnd`가 멈춰 자간 0을
+    /// 읽었다 (#260 PR 리뷰). delegate 유무로도 가르면 안 된다 — 공개 `HwpDrawnTextLayout.lines`로 들어온
+    /// 호스트 문자열이 조판 문자열 뒤에 자기 delegate 첨부(폭 있는 U+FFFC)를 이어 붙이면 그 첨부까지 표식으로
+    /// 읽어 앞 글자의 자간을 빼고 정렬·줄을 나눈다 (PR 리뷰 실측: 오른쪽 정렬 첨부 끝 198.56·201.44pt, 여백
+    /// 200pt). delegate의 refcon(`HwpInlineObjectMetrics`)은 호스트 delegate에서 타입이 달라 읽지 않는다.
+    /// 글자처럼 취급 개체의 마커도 표식을 지니지만 예약 높이(`inlineObjectHeight`)로 내용 글자다 — 예약
+    /// (`inlineObjectReservation`)은 폭·높이가 모두 양수일 때만 나오고 그때만 delegate에 폭을 주므로, 예약
+    /// 높이 없는 빌더 마커는 폭 0이다. 예약 높이는 값(> 0)이 아니라 **유무**로 본다 — `withReservedHeights`가
+    /// 높이를 다시 쓰며 0을 실을 여지가 있다. 문서 본문의 U+FFFC 글자는 표식이 없어 내용 글자다.
     static func isZeroWidthControlMarker(
         _ unit: UniChar, in attributedString: NSAttributedString, at index: Int
     ) -> Bool {
         unit == 0xFFFC
             && attributedString.attribute(
-                HwpAttributedStringKey.controlIndex, at: index, effectiveRange: nil
+                HwpAttributedStringKey.controlMarker, at: index, effectiveRange: nil
             ) != nil
             && attributedString.attribute(
                 HwpAttributedStringKey.inlineObjectHeight, at: index, effectiveRange: nil
