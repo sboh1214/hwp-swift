@@ -1610,8 +1610,24 @@ run 블록 #165와 같은 표) 각주 이어짐의 본문 하한(`footnoteBodyBo
     뺀다. **줄 끝의 폭 0 컨트롤 표식(필드 끝·책갈피 등)은 없는 것으로 본다** (#260 리뷰 실측, 한글 12.30 build
     6523: 라틴 ±20% 오른쪽 정렬 `abcd` 뒤에 하이퍼링크 끝·책갈피를 둬도 `d`가 표식 없는 문단과 같은 498.24pt,
     줄 폭 387.5pt의 −20% `aaaaa` 줄 나눔도 링크 유무와 같은 6단어) — 그 앞 글자가 마지막 글자다
-    (`isZeroWidthControlMarker` — `controlIndex`가 있고 `inlineObjectHeight`가 없는 U+FFFC; 글자처럼 취급 개체는
-    내용 글자다). 양수 자간은 그 표식에 막혀 CoreText가 매달지 못하므로 그 몫도 정렬·양쪽 정렬이 뺀다.
+    (`isZeroWidthControlMarker` — 빌더 마커 표식(`hwp.controlMarker`)이 있고 `inlineObjectHeight`가 없는 U+FFFC;
+    글자처럼 취급 개체는 내용 글자다). **판별 열쇠는 빌더가 직접 다는 표식이다** (#260 PR 리뷰 두 건).
+    ① `controlIndex`로 가르면 안 된다 — extended 컨트롤(필드 시작·책갈피 등)에만 있고 필드 끝(하이퍼링크 끝 포함)은
+    inline 코드 4라 없다. 처음엔 그렇게 해 실측한 바로 그 링크 끝을 놓쳤는데(줄 끝 자간 0 — 오른쪽 정렬 `d`
+    500.61·495.79pt, −20% 줄 나눔 7단어), 합성 표식 테스트가 실제 필드 끝에 없는 `controlIndex`를 달고 있어
+    초록이었다 — 회귀 테스트는 실제 빌더로 만든 링크 문단(`HwpLineEndFieldEndTests`)이다. ② run delegate 유무로
+    가르면 안 된다 — 공개 `HwpDrawnTextLayout.lines`로 들어온 호스트 문자열이 조판 문자열 뒤에 자기 delegate
+    첨부(폭 있는 U+FFFC)를 이어 붙이면 그 첨부까지 표식으로 읽어 앞 글자의 자간을 빼고 정렬·줄을 나눈다(리뷰
+    워크플로 실측: 오른쪽 정렬 첨부 끝 198.56·201.44pt, 여백 200pt). delegate의 refcon(`HwpInlineObjectMetrics`)으로
+    폭을 읽는 것도 안 된다 — 호스트 delegate는 refcon 타입이 달라 크래시한다(같은 실측, SIGSEGV). 그래서
+    `HwpInlineObjectReservation.attachMarkerDelegate`가 마커에 delegate를 달 때 표식을 함께 달고(delegate를 못 만들면
+    둘 다 없다 — 그 U+FFFC는 글리프 폭을 가진다), 판별은 그 표식을 본다. 문서 본문의 U+FFFC 글자도 표식이 없어
+    내용 글자다. 개체 마커도 표식을 지니므로 예약 높이로 가른다 — 예약(`inlineObjectReservation`)은 폭·높이가 모두
+    양수일 때만 나와 그때만 delegate에 폭과 예약 높이를 주므로 예약 높이 없는 빌더 마커는 폭 0이다(같은 테스트가
+    빌더 출력으로 핀한다). 예약 높이는 값이 아니라 **유무**로 본다(`withReservedHeights`가 0을 다시 쓸 여지).
+    판별을 넓히면 inline 코드 5–8(8 = 제목 차례 표시)·19·20 마커도 줄 끝에서 투명해지는데 같은 폭 0 무형 문자라
+    같은 규칙으로 본다 — 한글 실측은 하이퍼링크 끝·책갈피뿐이다.
+    양수 자간은 그 표식에 막혀 CoreText가 매달지 못하므로 그 몫도 정렬·양쪽 정렬이 뺀다.
     **CoreText는 10,240 UTF-16 단위를 넘는 문자열의 kern·tracking을 통째로 무시한다** (실측 — 10,240자는
     적용, 10,241자부터 글자마다·일정 kern·tracking 모두 0; `coreTextSpacingLengthLimit`). 그런 문단은 자간 없이
     그려지므로 줄 끝 보정도 하지 않는다 — 하면 적용되지 않은 자간을 빼서 들어가는 줄을 나눈다. 그런 문단이
@@ -1676,7 +1692,9 @@ run 블록 #165와 같은 표) 각주 이어짐의 본문 하한(`footnoteBodyBo
     빈칸 글꼴 폭).
   - 가드: `HwpLetterSpacingTests`(묶음·대체 글꼴·운반 속성 선택·앞 빈칸·혼용 = tracking 등가(macOS·iOS 공통
     글꼴)·줄 끝 자간·라벨(한글 마지막 글자의 kern 운반 속성)·글머리표·각주 번호·문서 캐시의 커닝 집합 1회
-    조회)·`HwpLetterSpacingEdgeCaseTests`(줄 끝 Zs 공백·컨트롤 표식·10,240자 상한·캐시 열쇠·뒤 단위만 없는 묶음·방점·
+    조회)·`HwpLineEndFieldEndTests`(실제 빌더로 만든 링크 끝 — 줄 끝 자간·왼쪽·오른쪽·가운데 정렬의 평문과 글자
+    자리 동일·겹친 필드 끝·링크 끝 뒤 빈칸·−20% 줄 나눔과 측정 ≡ 렌더·개체와 본문 U+FFFC는 내용 글자·호스트 delegate
+    첨부는 내용 글자(오른쪽 정렬 끝 200pt)·빌더 표식 폭 0 불변식)·`HwpLetterSpacingEdgeCaseTests`(표식 판별 진리표·줄 끝 Zs 공백·컨트롤 표식(extended·inline)·10,240자 상한·캐시 열쇠·뒤 단위만 없는 묶음·방점·
     첫가끝 초성 묶음·치환 글리프의 혼용 = tracking(NotoNastaliqUrdu))·`HwpKerningCoverageTests`(kern·GPOS·GSUB 합성
     표·치환 입력 고정점(델타·배열·다중·대체·확장·사슬)·공유 오프셋 조작 표(중복 방문 시 예산 초과)·
     넓은 범위의 낱말 단위 예산·유형이 다른 룩업의 공유 부분표·시스템 글꼴)·`HwpLineEndSpacingTests`(줄 끝
