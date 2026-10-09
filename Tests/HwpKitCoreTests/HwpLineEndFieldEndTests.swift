@@ -220,6 +220,54 @@ import XCTest
             expect(measured.lines.map(\.attributedRange)) == lines.map(\.stringRange)
         }
 
+        /// 책갈피(extended 코드 22).
+        private static let bookmark = CoreHwp.HwpChar(type: .extended, value: 22)
+
+        /// Menlo 12pt +20% `aaaaa aaaaa`가 마지막 글자 자간을 빼면 들어가고 넣으면 넘치는 줄 폭 — 92.45 ≤ 92.88 <
+        /// 93.90pt (#260 PR 리뷰의 재현 폭).
+        private static let positiveWindowWidth: CGFloat = 92.88
+
+        /// 줄마다의 문자열 (U+FFFC는 ◊).
+        private static func lineTexts(
+            _ attributed: NSAttributedString, lineWidth: CGFloat
+        ) -> [String] {
+            let string = attributed.string as NSString
+            return HwpDrawnTextLayout.lines(
+                attributedString: attributed, origin: .zero, lineWidth: lineWidth
+            ).map {
+                string.substring(with: $0.stringRange)
+                    .replacingOccurrences(of: "\u{FFFC}", with: "◊")
+            }
+        }
+
+        func testPositiveSpacingMarkersBreakTheLineLikeHangul() throws {
+            /// 양수 자간 줄 끝 글자 뒤의 폭 0 표식은 그 글자의 tracking을 매달지 못하게 해, 마지막 글자 자간을 빼면
+            /// 들어가는 줄도 넘친다 — 한글도 그렇다 (한글 12.30 build 6523 실측, 2026-10-09: Menlo 20pt +20%
+            /// `aaaaa aaaaa aaaaa aaaaa`를 마지막 글자 자간을 넣으면 넘치고 빼면 들어가는 줄 폭 154.2–156.0pt에 두면
+            /// 평문은 2줄인데, 문단 끝 책갈피는 책갈피만 있는 빈 셋째 줄(줄 피치 32pt만큼 문단이 높다), 문단 전체
+            /// 링크는 `aaaaa aaaaa ` / `aaaaa aaaa` / `a`의 3줄, 둘째 낱말 뒤 책갈피 + 빈칸은 `aaaaa aaaaa` /
+            /// ` aaaaa ` / `aaaaa`의 3줄). 그래서 표식을 앞 줄로 되돌리지 않는다 — #260 PR 리뷰가 그렇게 하라고
+            /// 했지만 한글과 갈린다. 남은 차이는 링크 끝 하나다: 한글은 필드 끝 앞 글자도 함께 셋째 줄로 보낸다.
+            func visible(
+                _ chars: [CoreHwp.HwpChar], _ controls: [CoreHwp.HwpCtrlId]
+            ) throws -> [String] {
+                try Self.lineTexts(
+                    builtParagraph(chars, controls: controls, spacing: 20, alignment: .left),
+                    lineWidth: Self.positiveWindowWidth
+                ).map { $0.replacingOccurrences(of: "◊", with: "") }
+            }
+            let words = Self.textChars(Array(repeating: "aaaaa", count: 4).joined(separator: " "))
+            expect(try visible(words, [])) == ["aaaaa aaaaa ", "aaaaa aaaaa"]
+            let bookmark = [HwpSynthetic.bookmarkControl("bm")]
+            expect(try visible(words + [Self.bookmark], bookmark))
+                == ["aaaaa aaaaa ", "aaaaa aaaaa", ""]
+            let linked = [Self.fieldStart] + words + [Self.fieldEnd]
+            expect(try visible(linked, [Self.link]).count) == 3
+            let midBookmark = Self.textChars("aaaaa aaaaa") + [Self.bookmark]
+                + Self.textChars(" aaaaa aaaaa")
+            expect(try visible(midBookmark, bookmark)) == ["aaaaa aaaaa", " aaaaa ", "aaaaa"]
+        }
+
         func testObjectsAndLiteralReplacementCharactersAreContent() throws {
             // 판별의 두 경계: 글자처럼 취급 개체의 표식(예약 높이)과 문서 본문의 U+FFFC 글자(빌더 마커 표식 없음)는
             // 내용 글자다 — 줄 끝 자간 규칙이 그 앞 글자로 건너뛰지 않는다.
