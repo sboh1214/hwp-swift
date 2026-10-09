@@ -21,13 +21,18 @@ import Foundation
 /// - GSUB의 합자·문맥·역문맥 치환(유형 4·5·6·8, 확장 유형 7은 풀어서) 룩업의 **시작 글리프** 커버리지 —
 ///   tracking은 선택 합자와 일부 문맥 형태를 끄는데 kern은 끄지 않으므로, 치환이 시작될 수 있는 글리프도
 ///   tracking으로 보내야 두 운반 속성의 글리프가 같다.
+/// - GSUB 단일·다중·대체 치환(유형 1–3)의 입력 중 **결과가 이 집합에 드는** 글리프 — 사슬은 끝까지 따른다
+///   (`closeOverSubstitutions`). 위 커버리지는 치환 뒤 글리프를 가리키는데 운반 속성은 치환 전 글리프로
+///   고르기 때문이다(아랍 문자의 어두·어중 형태가 필기체 연결 커버리지에 드는 경우).
 /// - AAT `kerx`·`morx`·`mort` 표가 있으면 전체로 본다(해석하지 않는다 — Menlo·Helvetica가 그렇다).
 ///
-/// 실측 크기(2026-10-08, 설치 글꼴 934종 fontTools 대조 일치): Apple SD 산돌고딕 Neo 143글리프(라틴 66·
-/// `〃`·`dlig` 합자의 첫 음절 `주`), 함초롬바탕 668(라틴 13, 나머지는 데바나가리 등), 함초롬돋움 714(라틴 63),
-/// AppleMyungjo 0, Times New Roman 164(라틴 19)·Arial 170(라틴 19). 한글 음절·한자는 한글 글꼴에서 거의
-/// 들지 않지만 예외가 있다 — Apple SD 산돌고딕 Neo의 `주`, 일본어 글꼴 Hiragino Sans의 한자 164자(GPOS
-/// `palt` 계열 단일 조정). 그런 글리프는 tracking으로 실려 결과는 같고 조판만 느리다.
+/// 실측 크기(2026-10-08, 설치 글꼴 934종 fontTools 대조 일치 — 치환 입력을 더한 집합은 2026-10-09
+/// 1,715면 대조 일치): Apple SD 산돌고딕 Neo 252글리프(치환 입력 전 143 — 라틴 66·`〃`·`dlig` 합자의
+/// 첫 음절 `주`), 함초롬바탕 679(668 — 라틴 13, 나머지는 데바나가리 등), 함초롬돋움 725(714 — 라틴 63),
+/// AppleMyungjo 0, Times New Roman 170(164 — 라틴 19)·Arial 176(170 — 라틴 19). 치환 입력은 네 한글
+/// 글꼴 모두에서 한글 음절을 하나도 더하지 않았다. 한글 음절·한자는 한글 글꼴에서 거의 들지 않지만
+/// 예외가 있다 — Apple SD 산돌고딕 Neo의 `주`, 일본어 글꼴 Hiragino Sans의 한자 164자(GPOS `palt` 계열
+/// 단일 조정). 그런 글리프는 tracking으로 실려 결과는 같고 조판만 느리다.
 enum HwpKerningCoverage {
     /// 글리프 집합 — 비트 하나가 글리프 하나. `nil`인 자리(`glyphs(of:)`)는 "모든 글리프".
     struct GlyphSet: Equatable {
@@ -138,7 +143,8 @@ enum HwpKerningCoverage {
             var walk = Walk(set: set)
             guard parseLookups(
                 Reader(gsub), extensionType: 7, collect: [4, 5, 6, 8], skip: 1 ... 3, into: &walk
-            )
+            ),
+                closeOverSubstitutions(Reader(gsub), into: &walk)
             else { return nil }
             set = walk.set
         }
@@ -272,6 +278,21 @@ enum HwpKerningCoverage {
         _ table: Reader, extensionType: UInt16, collect: Set<UInt16>, skip: ClosedRange<UInt16>,
         into walk: inout Walk
     ) -> Bool {
+        forEachSubtable(table, extensionType: extensionType, walk: &walk) { type, start, walk in
+            guard collect.contains(type) else { return skip.contains(type) }
+            guard let format = table.u16(start),
+                  let coverage = coverageOffset(table, subtable: start, type: type, format: format)
+            else { return false }
+            return parseCoverage(table, at: start + coverage, into: &walk)
+        }
+    }
+
+    /// 룩업 목록의 부분표마다 `body(유형, 부분표 시작, walk)`를 부른다 — 확장 유형은 풀어서 그 안의 유형과
+    /// 자리로 넘기고, 이미 본 룩업과 (자리, 유형)은 건너뛴다. `body`가 false면 해석을 포기한다(false).
+    static func forEachSubtable(
+        _ table: Reader, extensionType: UInt16, walk: inout Walk,
+        _ body: (UInt16, Int, inout Walk) -> Bool
+    ) -> Bool {
         guard let listOffset = table.u16(8).map(Int.init) else { return false }
         guard listOffset != 0 else { return true }
         guard let lookupCount = table.u16(listOffset).map(Int.init), walk.spend(lookupCount)
@@ -298,16 +319,7 @@ enum HwpKerningCoverage {
                     start += extensionOffset
                 }
                 guard walk.firstVisit(start, kind: 1, type: subtableType) else { continue }
-                if collect.contains(subtableType) {
-                    guard let format = table.u16(start),
-                          let coverage = coverageOffset(
-                              table, subtable: start, type: subtableType, format: format
-                          ),
-                          parseCoverage(table, at: start + coverage, into: &walk)
-                    else { return false }
-                } else if !skip.contains(subtableType) {
-                    return false
-                }
+                guard body(subtableType, start, &walk) else { return false }
             }
         }
         return true

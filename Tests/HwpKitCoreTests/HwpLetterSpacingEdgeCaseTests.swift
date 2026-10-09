@@ -185,6 +185,44 @@ import XCTest
             expect(abs((keycap.first?.spacing ?? 0) - Self.advance(0x23, in: font) * 0.2)) > 0.5
         }
 
+        func testSubstitutedGlyphsKeepMixedCarriersEqualToTracking() throws {
+            // 커닝 집합은 치환 뒤 글리프를 가리키는데 운반 속성은 치환 전 글리프로 고른다 — NotoNastaliqUrdu의
+            // `ل`은 어두 형태로 바뀐 뒤에야 필기체 연결 커버리지에 들어, 치환 입력을 집합에 넣기 전에는 kern으로
+            // 실려 글리프 자리가 tracking만 쓴 조판과 11.88pt 갈렸다 (#260 리뷰). macOS·iOS 시스템 글꼴이다.
+            let name = "NotoNastaliqUrdu-Bold"
+            let font = CTFontCreateWithName(name as CFString, 20, nil)
+            try XCTSkipUnless(CTFontCopyPostScriptName(font) as String == name, "\(name) 없음")
+            func positions(_ string: NSAttributedString) -> [CGPoint] {
+                let line = CTLineCreateWithAttributedString(string)
+                var result: [CGPoint] = []
+                for run in CTLineGetGlyphRuns(line) as? [CTRun] ?? [] {
+                    var points = [CGPoint](repeating: .zero, count: CTRunGetGlyphCount(run))
+                    CTRunGetPositions(run, CFRange(location: 0, length: points.count), &points)
+                    result += points
+                }
+                return result
+            }
+            let texts = [
+                "\u{0644}\u{0645}\u{0652}",
+                "\u{0628}\u{0633}\u{0645} \u{0627}\u{0644}\u{0644}\u{0647}",
+            ]
+            for text in texts {
+                let mixed = positions(HwpTextRunBuilder.letterSpacedString(
+                    text, attributes: [Self.fontKey: font], ratio: -0.2
+                ))
+                let tracked = positions(HwpTextRunBuilder.letterSpacedString(
+                    text, attributes: [Self.fontKey: font], ratio: -0.2, coverage: { _ in nil }
+                ))
+                expect(mixed.count) == tracked.count
+                for (mixedPoint, trackedPoint) in zip(mixed, tracked) {
+                    expect(mixedPoint.x)
+                        .to(beCloseTo(trackedPoint.x, within: 1e-6), description: text)
+                    expect(mixedPoint.y)
+                        .to(beCloseTo(trackedPoint.y, within: 1e-6), description: text)
+                }
+            }
+        }
+
         func testClusterRangeJoinsToneMarksAndChoseongSequences() {
             func cluster(_ text: String) -> Int {
                 let string = text as NSString

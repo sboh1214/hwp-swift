@@ -152,7 +152,7 @@ import XCTest
             wrapper.u16(1, 5)
             wrapper.u32(8)
             wrapper.data.append(context.data)
-            // 단일 치환(1)은 건너뛴다.
+            // 결과(60)가 집합 밖인 단일 치환(1)의 입력은 들지 않는다.
             var single = Bytes()
             single.u16(1, 6, 0)
             single.data.append(Self.coverage1([60]))
@@ -161,6 +161,64 @@ import XCTest
             ])
             let set = HwpKerningCoverage.parse(kern: nil, kerx: nil, gpos: nil, gsub: gsub)
             expect(Self.members(set)) == [40, 41, 42]
+        }
+
+        /// 단일 치환 형식 2 — `coverage[i]` → `results[i]`.
+        private static func singleSubstitution(_ coverage: [Int], _ results: [Int]) -> Data {
+            var bytes = Bytes()
+            bytes.u16(2, 6 + results.count * 2, results.count)
+            for result in results {
+                bytes.u16(result)
+            }
+            bytes.data.append(Self.coverage1(coverage))
+            return bytes.data
+        }
+
+        /// 다중(2)·대체(3) 치환 형식 1 — 입력 하나와 그 결과 목록.
+        private static func sequenceSubstitution(_ input: Int, _ results: [Int]) -> Data {
+            var bytes = Bytes()
+            bytes.u16(1, 8 + 2 + results.count * 2, 1, 8) // 형식·커버리지·수 1·순서열 오프셋 8
+            bytes.u16(results.count)
+            for result in results {
+                bytes.u16(result)
+            }
+            bytes.data.append(Self.coverage1([input]))
+            return bytes.data
+        }
+
+        func testSubstitutionInputsJoinWhenTheirResultsAreCovered() {
+            // 커버리지는 치환 뒤 글리프를 가리킨다 — 결과가 집합(여기선 GPOS 단일 조정 [20])에 드는 단일·다중·대체
+            // 치환의 입력도 집합이다 (아랍 문자의 어두 형태가 필기체 연결 커버리지에 드는 경우, #260 리뷰).
+            var adjustment = Bytes()
+            adjustment.u16(1, 6, 0)
+            adjustment.data.append(Self.coverage1([20]))
+            let gpos = Self.layoutTable([(1, adjustment.data)])
+            // 단일 형식 1(델타): 10 → 20.
+            var delta = Bytes()
+            delta.u16(1, 6, 10)
+            delta.data.append(Self.coverage1([10]))
+            // 확장(7) → 단일 형식 2: 11 → 30(집합 밖).
+            var wrapper = Bytes()
+            wrapper.u16(1, 1)
+            wrapper.u32(8)
+            wrapper.data.append(Self.singleSubstitution([11], [30]))
+            // 사슬: 14 → 15 → 20. 앞 규칙이 먼저 훑여도 15가 든 뒤 14가 든다.
+            let gsub = Self.layoutTable([
+                (1, delta.data), (7, wrapper.data),
+                (2, Self.sequenceSubstitution(12, [40, 20])),
+                (3, Self.sequenceSubstitution(13, [50])),
+                (1, Self.singleSubstitution([14], [15])),
+                (1, Self.singleSubstitution([15], [20])),
+            ])
+            let set = HwpKerningCoverage.parse(kern: nil, kerx: nil, gpos: gpos, gsub: gsub)
+            expect(Self.members(set)) == [10, 12, 14, 15, 20]
+            // 결과를 집합에 넣는 조정이 없으면 치환 입력은 들지 않는다.
+            let unadjusted = HwpKerningCoverage.parse(kern: nil, kerx: nil, gpos: nil, gsub: gsub)
+            expect(Self.members(unadjusted)) == []
+            // 형식을 모르는 치환 부분표는 해석하지 못한 것이다(nil = 전체 글리프).
+            let unknown = Self.layoutTable([(1, Data([0, 3, 0, 6]) + Self.coverage1([1]))])
+            let unparsed = HwpKerningCoverage.parse(kern: nil, kerx: nil, gpos: gpos, gsub: unknown)
+            expect(unparsed).to(beNil())
         }
 
         func testSharedOffsetsAreWalkedOnce() {
