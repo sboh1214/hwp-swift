@@ -15,8 +15,9 @@ extension HwpPageLayer {
     /// (`HwpLineBreaker.lineEndSpacingAligned`·`HwpWordJustification`). 그래서 마지막 글자 run의
     /// 장식 끝을 그 전진량 끝으로 옮긴다(`LineEndEdge`).
     ///
-    /// 자간은 속성 값이 아니라 **CoreText가 실제로 준 몫**으로 잰다 — 마지막 글리프의 run 진행 폭에서
-    /// 글꼴의 진행 폭을 뺀다(장평 글꼴도 둘 다 행렬 적용 뒤 값이다, 실측). 문단이 CoreText 자간 상한
+    /// 자간은 속성 값이 아니라 **CoreText가 실제로 준 몫**으로 잰다 — 마지막 묶음(`lastClusterSpacing`)의
+    /// 글리프들의 run 진행 폭 합에서 글꼴 진행 폭 합을 뺀다(장평 글꼴도 둘 다 행렬 적용 뒤 값이다, 실측).
+    /// 문단이 CoreText 자간 상한
     /// (`HwpLetterSpacing.coreTextSpacingLengthLimit`)보다 길면 자간이 적용되지 않아 0이다. 줄이 공백
     /// 없이 그 글자로 끝날 때만 옮긴다 — 폭 0 run(문단·줄 끝 표식, 필드 끝·책갈피 같은 컨트롤 표식)
     /// 뒤의 시각상·논리상 마지막 run이 자간 표식(`hwp.letterSpacing`)을 지니고, 줄 끝 공백 폭이 0이거나
@@ -38,13 +39,7 @@ extension HwpPageLayer {
               attributes[lastIndex][HwpAttributedStringKey.letterSpacing] != nil,
               let font = runFont(attributes[lastIndex])
         else { return nil }
-        var glyph = CGGlyph()
-        var advance = CGSize.zero
-        var nominal = CGSize.zero
-        CTRunGetGlyphs(last, CFRange(location: count - 1, length: 1), &glyph)
-        CTRunGetAdvances(last, CFRange(location: count - 1, length: 1), &advance)
-        CTFontGetAdvancesForGlyphs(font, .horizontal, &glyph, &nominal, 1)
-        let spacing = advance.width - nominal.width
+        let spacing = Self.lastClusterSpacing(of: last, glyphCount: count, font: font)
         let trailing = CGFloat(CTLineGetTrailingWhitespaceWidth(line))
         guard abs(spacing) > 0.001, trailing < 0.01 || abs(spacing - trailing) < 0.01
         else { return nil }
@@ -55,6 +50,35 @@ extension HwpPageLayer {
         }) else { return nil }
         let runMaxX = runBounds(of: last, lineOrigin: lineOrigin).maxX
         return LineEndEdge(runMaxX: runMaxX, edge: runMaxX - spacing)
+    }
+
+    /// run 끝 묶음에 CoreText가 실제로 준 자간 — 마지막 글리프부터 거꾸로 결합 부호(글꼴 진행 폭 0)를
+    /// 지나 기반 글리프까지, 그 글리프들의 run 진행 폭 합 − 글꼴 진행 폭 합.
+    ///
+    /// 마지막 글리프 하나만 보면 안 된다: CoreText는 묶음 자간을 묶음 끝에 싣되 결합 부호의 자리를
+    /// 맞추느라 기반 글자의 진행 폭을 줄이고 그 몫을 부호의 진행 폭으로 옮긴다 (#260 리뷰 실측: Times New
+    /// Roman 20pt 자간 −20% `abcx́`에서 `x` 10 → 7.715pt, 부호 0 → 0.285pt — 묶음 합은 자간 그대로 −2pt인데
+    /// 부호만 재면 +0.285pt로 읽혀 장식 끝이 32.203 대신 29.918pt, +20%에서는 부호 4.285pt가 줄 끝 공백
+    /// 2pt와 안 맞아 끝을 옮기지 못했다). run 진행 폭은 묶음째 **한 번에** 읽는다 — `CTRunGetAdvances`는
+    /// 요청 범위 안 글리프에는 다음 글리프까지의 자리 차를 주지만 범위의 마지막 글리프에는 그 글리프 몫을
+    /// 따로 주므로(`x`만 읽으면 10pt), run 끝까지 닿는 범위로 읽어야 합이 실제 몫이다 (실측).
+    static func lastClusterSpacing(of run: CTRun, glyphCount count: Int, font: CTFont) -> CGFloat {
+        var start = count - 1
+        var nominalWidth: CGFloat = 0
+        while start >= 0 {
+            var glyph = CGGlyph()
+            var nominal = CGSize.zero
+            CTRunGetGlyphs(run, CFRange(location: start, length: 1), &glyph)
+            CTFontGetAdvancesForGlyphs(font, .horizontal, &glyph, &nominal, 1)
+            nominalWidth += nominal.width
+            if abs(nominal.width) > 0.001 || start == 0 {
+                break
+            }
+            start -= 1
+        }
+        var advances = [CGSize](repeating: .zero, count: count - start)
+        CTRunGetAdvances(run, CFRange(location: start, length: count - start), &advances)
+        return advances.reduce(0) { $0 + $1.width } - nominalWidth
     }
 }
 

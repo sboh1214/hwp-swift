@@ -186,6 +186,39 @@ final class HwpPageLayerLetterSpacingTests: XCTestCase {
         expect(edge(unmarked)).to(beNil())
     }
 
+    func testLineEndDecorationEdgeMeasuresTheWholeLastCluster() throws {
+        // 마지막 묶음에 결합 부호가 있으면 CoreText는 부호 자리를 맞추느라 기반 글자의 진행 폭을 줄이고 그 몫을
+        // 부호로 옮긴다 (Times New Roman 20pt `x́`: `x` 10 → 7.715pt, 부호 0 → 0.285pt) — 자간은 묶음 전체의
+        // 몫이라 장식 끝은 `x` 자리 + 자간 없는 전진량이다. 부호만 재면 −20%에서 29.918pt(맞는 값 32.203pt),
+        // +20%에서는 줄 끝 공백과 안 맞아 끝을 옮기지 못했다 (#260 리뷰).
+        let layer = HwpPageLayer()
+        let times = CTFontCreateWithName("TimesNewRomanPSMT" as CFString, 20, nil)
+        var character: UniChar = 0x78
+        var glyph = CGGlyph()
+        _ = CTFontGetGlyphsForCharacters(times, &character, &glyph, 1)
+        var nominal = CGSize.zero
+        CTFontGetAdvancesForGlyphs(times, .horizontal, &glyph, &nominal, 1)
+        for ratio: CGFloat in [-0.2, 0.2] {
+            let string = HwpTextRunBuilder.letterSpacedString(
+                "abcx\u{301}", attributes: [Self.font: times], ratio: ratio
+            )
+            let line = CTLineCreateWithAttributedString(string)
+            let runs = CTLineGetGlyphRuns(line) as? [CTRun] ?? []
+            let edge = layer.lineEndDecorationEdge(
+                of: line, runs: runs, attributes: runs.map(layer.runAttributes), lineOrigin: .zero
+            )
+            let last = try XCTUnwrap(runs.last)
+            expect(CTRunGetStringRange(last).location) == 3
+            var xOrigin = CGPoint.zero
+            CTRunGetPositions(last, CFRange(location: 0, length: 1), &xOrigin)
+            expect(edge?.edge)
+                .to(beCloseTo(xOrigin.x + nominal.width, within: 1e-3), description: "\(ratio)")
+            expect(HwpPageLayer.lastClusterSpacing(
+                of: last, glyphCount: CTRunGetGlyphCount(last), font: times
+            )).to(beCloseTo(nominal.width * ratio, within: 1e-3), description: "\(ratio)")
+        }
+    }
+
     func testLineEndSpacingIsNotDecorated() throws {
         // 음영이 마지막 글자의 자간 없는 전진량에서 끝난다 — 양수면 잘리고 음수면 늘어난다.
         let blue = CGColor(red: 0, green: 0, blue: 1, alpha: 1)
