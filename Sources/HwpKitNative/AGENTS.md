@@ -198,12 +198,46 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   크기인지를 실측으로 정할 것 — 비율은 `HwpDecorationLineGeometryTests`(+`+Script`·`+Compat`·
   `+Hwp2007`·`+LineWide`)가 폰트 독립으로, 절대 위치는 `FixtureDecorationLineRenderTests`
   (+`+Script`·`+Compat`·`+Hwp2007`·`+LineWide`)가 픽스처 픽셀로 잡는다.
+- **음영·실선 장식은 줄 단위로 채운다** (#260, `SolidFillBatch`). 자간이 글자 전진량의 %라(`Sources/
+  HwpKitCore/AGENTS.md` "자간은 글자마다") 자간 있는 라틴 글자열은 글자마다 kern·tracking 값이 달라
+  CoreText run이 글자 하나씩이다. run마다 사각형을 칠하면 소수 좌표에서 맞닿은 두 사각형이 경계 픽셀을 반씩 덮어
+  그 열이 옅게 남는다(같은 색 [2, 10.5]·[10.5, 19.8]의 경계 열 커버리지 0.75 — 실측) — 글자마다 밑줄·음영에
+  이음매가 생긴다. 그래서 `drawDecoratedLine`이 음영 상자(`collectShade`)와 실선 사각형(`fillLine`의 실선
+  갈래)을 줄마다 색별 한 경로에 모아 한 번에 칠한다(합집합 위에서 커버리지를 재므로 이음매가 없다).
+  칠하는 차례는 run마다 그리던 종전 순서를 지킨다 — 글자 모양 선(밑줄·위 밑줄·취소선)의 실선을 칠한 뒤
+  강조점, 그다음 변경 추적 삽입 밑줄(따로 모은 경로), 마지막으로 탭 채움이다(실선을 줄 끝에 한꺼번에 칠하면
+  강조점·탭 채움을 덮는다). **줄 끝 글자의 장식은 그 글자의 자간 없는 전진량에서 끝난다**
+  (`lineEndDecorationEdge` → `LineEndEdge`) — 한글은 줄의 마지막 글자에 자간을 주지 않고 조판도 그 전진량을 줄
+  끝에 맞추는데(`HwpLineBreaker.lineEndSpacingAligned`·`HwpWordJustification`), CoreText의 run 경계는 그 글자의
+  자간을 품어 run 경계로 재는 음영·실선·선 모양 span·메모 괄호가 양수 자간이면 그 몫만큼 글자 뒤로(오른쪽 정렬
+  줄은 여백 밖으로) 뻗고 음수 자간이면 그만큼 모자라 여백 앞에서 끊겼다(#260 리뷰 — 처음엔 양수만 잘랐다).
+  경계가 그 run의 끝과 같은 장식만 그 전진량 끝으로 옮긴다(자르거나 늘린다). 자간은 속성 값이 아니라 **CoreText가
+  실제로 준 몫**(마지막 **묶음**의 run 진행 폭 합 − 글꼴 진행 폭 합 — 결합 부호(글꼴 진행 폭 0)를 지나 기반
+  글리프까지(`lastClusterSpacing`); 장평 글꼴도 둘 다 행렬 적용 뒤 값 — 실측)으로 재므로
+  CoreText가 자간을 버리는 10,240자 넘는 문단에서는 0이다. 묶음째 재는 것은 CoreText가 결합 부호 자리를 맞추느라
+  기반 글자 진행 폭의 몫을 부호로 옮기기 때문이다 (#260 리뷰 실측: Times New Roman 20pt −20% `x́`의 `x` 10 →
+  7.715pt·부호 0 → 0.285pt — 부호만 재면 +0.285pt로 읽어 장식 끝이 29.918pt(맞는 값 32.203pt), +20%는 끝을 옮기지
+  못했다). 진행 폭은 run 끝까지 닿는 범위로 **한 번에** 읽는다 — `CTRunGetAdvances`는 요청 범위의 마지막 글리프에
+  그 글리프 몫을 따로 줘서 `x` 하나만 읽으면 10pt다(실측). 줄이 공백 없이 그 글자로 끝날 때(폭 0 run — 줄·문단
+  끝 표식, 필드 끝·책갈피 같은 컨트롤 표식 — 뒤의 마지막 run이 자간 표식 `hwp.letterSpacing`을 지니고, 줄 끝 공백
+  폭이 0이거나 매달린 양수 자간과 같을 때)만 옮긴다 — 빈칸이 뒤따르면 빈칸 밑 선까지 옮기게 되므로 그대로 둔다.
+  **run 속성 사전은 줄마다 run당 한 번만 꺼낸다**(`drawDecoratedLine`이 `runs.map(runAttributes)`를 장식 함수에
+  넘긴다, `RunDecoration`) — CFDictionary를 Swift 사전으로 옮기는 비용이 재드로의 대부분이었는데 장식 함수마다
+  다시 꺼내 run당 열두 번쯤 옮겼다. 자간이 글자마다 run을 가르는 라틴 글자열에서 그 비용이 run 수만큼 불어
+  재드로가 main의 약 3배로 느려졌던 것을(#260 리뷰 실측) 바로잡으며 main보다도 빨라졌다 (릴리스, 8초 반복 수:
+  Helvetica 10pt −5% 밑줄 문서 main 81 · 리뷰 전 26.5 · 이후 116회, 헌법주석 100–119쪽 18.5 · 15.5 · 56.5회).
+  메모 괄호 패스는 메모 앵커 run이 있는 줄에서만 돈다. 메모 앵커 괄호도 run마다 세우면 글자마다
+  섰으므로 **줄 안에서 잇닿은 앵커 run을 한 범위로 묶어** 양 끝에만 세운다(`drawMemoAnchorBrackets`, 두 앵커가
+  틈 없이 붙으면 한 쌍으로 보인다 — 한글도 범위 양 끝의 괄호다). 장식 경계(`runBounds`)와 강조점은 run 위치에
+  **글꼴 행렬을 씌운다** — `CTRunGetPositions`는 행렬 적용 전 좌표라 장평 50% run이 줄 24pt 자리에서 시작하면
+  48pt로 읽힌다(실측). 줄 머리 run만 0이라 맞았는데, 장평 글자열이 글자마다 run이 되며 드러났다
+  (`HwpDrawnTextLayoutHyperlinkRects`는 이미 행렬을 씌운다). 가드: `HwpPageLayerLetterSpacingTests`.
 - **선 모양(점선·파선·원형 점선·여러 줄·물결, #191)은 글자 모양 run 단위로 편다**
   (`HwpPageLayerLineShapes`). `drawDecoratedLine`이 줄마다 `lineShapeSpans(of:)`로 같은
   글자 모양 id(`hwp.charShapeId`)의 잇닿은 CoreText run을 묶어 첫 run 자리에 합친 경계를
   두고, `fillLine`은 모양 키(`hwp.underlineShape`·`hwp.strikethroughShape`)가 있으면 그
   span에만 `HwpLineShapeGeometry.path`를 편다(묶음의 나머지 run은 아무것도 그리지 않는다;
-  실선은 종전대로 run마다 사각형). 한글이 그렇다 — 한 글자 모양 안의 한글↔라틴 슬롯 전환
+  실선은 run마다 사각형이되 아래 "음영·실선 장식은 줄 단위로 채운다"대로 줄의 색별 경로에 모아 칠한다). 한글이 그렇다 — 한 글자 모양 안의 한글↔라틴 슬롯 전환
   (CoreText가 run을 가르는 경계)은 패턴이 이어지고 색만 다른 이웃 글자 모양은 run 시작에서
   다시 시작한다 (2026-09-17 실측). 묶음 열쇠는 id에 더해 선을 정하는 키다
   (`sameLineShapeGroup`: 모양·유무·색·축척 크기·`scriptBaselineOffset`·각주·미주 참조 번호 신원

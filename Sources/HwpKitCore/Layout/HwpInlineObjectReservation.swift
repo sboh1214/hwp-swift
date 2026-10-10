@@ -26,6 +26,13 @@ extension HwpAttributedStringKey {
     /// `inlineObjectWidthBasis`)와 함께만 붙고, 여백이 있을 때만 붙는다. 예약 폭을 다른 단
     /// 기하로 다시 풀 때 개체 폭에 이 값을 다시 더한다 (#193).
     static let inlineObjectWidthMargin = NSAttributedString.Key("hwp.inlineObjectWidthMargin")
+    /// 빌더가 낸 컨트롤 마커 (NSNumber true, #260 PR 리뷰) — `HwpTextRunBuilder.appendControlMarker`가 run
+    /// delegate와 함께 단다(`HwpInlineObjectReservation.attachMarkerDelegate`). 글자처럼 취급 개체의 마커에도
+    /// 붙는다(개체는 예약 높이 `inlineObjectHeight`로 가른다). 빌더 마커를 공개 `HwpDrawnTextLayout.lines`로
+    /// 들어온 호스트의 delegate 첨부(U+FFFC)·문서 본문의 U+FFFC 글자와 가르는 열쇠다 — `controlIndex`는
+    /// extended 컨트롤에만 있어(필드 끝은 inline 코드 4) 그 열쇠가 못 되고, delegate의 refcon은 호스트
+    /// delegate에서 타입이 달라 읽을 수 없다 (`HwpLetterSpacing.isZeroWidthControlMarker`).
+    static let controlMarker = NSAttributedString.Key("hwp.controlMarker")
 }
 
 /// treatAsChar 개체의 줄 공간 예약 값 (CTRunDelegate refCon)
@@ -61,6 +68,17 @@ enum HwpInlineObjectReservation {
             }
         )
         return CTRunDelegateCreate(&callbacks, Unmanaged.passRetained(metrics).toOpaque())
+    }
+
+    /// 컨트롤 마커에 예약 delegate(개체가 아니면 폭 0 — U+FFFC 글리프를 숨긴다)와 빌더 마커 표식
+    /// (`HwpAttributedStringKey.controlMarker`)을 단다. 표식은 delegate와 함께만 붙는다 — delegate를 못
+    /// 만들면 그 U+FFFC는 글리프 폭을 가지므로 표식도 없다.
+    static func attachMarkerDelegate(
+        size: CGSize, to attributes: inout [NSAttributedString.Key: Any]
+    ) {
+        guard let delegate = runDelegate(width: size.width, height: size.height) else { return }
+        attributes[kCTRunDelegateAttributeName as NSAttributedString.Key] = delegate
+        attributes[HwpAttributedStringKey.controlMarker] = NSNumber(value: true)
     }
 
     /// 줄 공간을 예약한 개체 마커의 속성인지 — 빌더가 예약 높이(`hwp.inlineObjectHeight`)를 싣는

@@ -191,6 +191,9 @@ final class FixturePreviewFidelityTests: XCTestCase {
         // 0.1pt대 자리 차이에 둔감하므로 이 값은 유실 가드이고, 선 자리의 가드는
         // `FixtureDecorationLineRenderTests+ScriptLarge`의 픽셀 핀이다.
         "script-strikethrough-large": 0.0051, // 실측 0.0036 (2026-10-07, 두 폰트 모드 같음)
+        // 글자 모양 자간(#260) — 1쪽은 20pt 자간 표본 11문단뿐이라 12×16 그리드는 글자 몇 pt의 자리 차이에
+        // 둔감하다. 이 값은 유실 가드이고, 글자 자리의 가드는 `FixtureLetterSpacingTests`의 PDF 원점 핀이다.
+        "letter-spacing": 0.0016, // 실측 0.0011 (2026-10-08, 두 폰트 모드 같음)
         "공공누리": 0.004, // 실측 0.0028 (저해상 GIF)
         "문서이력관리": 0.001, // 실측 0.0000
         "변경내용추적": 0.001, // 실측 0.0000

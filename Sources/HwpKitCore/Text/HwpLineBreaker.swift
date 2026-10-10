@@ -50,8 +50,8 @@ enum HwpLineBreaker {
         let probeLength = min(fullLength - startLocation, remainingLineBudget)
         guard probeLength > 0 else { return nil }
 
-        func frame(length: Int) -> (lines: [CTLine], origins: [CGPoint])? {
-            let range = CFRange(location: startLocation, length: length)
+        func frame(from start: Int, length: Int) -> (lines: [CTLine], origins: [CGPoint])? {
+            let range = CFRange(location: start, length: length)
             let suggested = CTFramesetterSuggestFrameSizeWithConstraints(
                 framesetter, range, nil,
                 CGSize(width: lineWidth, height: .greatestFiniteMagnitude), nil
@@ -65,10 +65,13 @@ enum HwpLineBreaker {
             else { return nil }
             var origins = [CGPoint](repeating: .zero, count: lines.count)
             CTFrameGetLineOrigins(created, CFRange(location: 0, length: 0), &origins)
-            return (lines, overflowStartAligned(origins, lines: lines, in: attributedString))
+            let aligned = overflowStartAligned(origins, lines: lines, in: attributedString)
+            return (lines, lineEndSpacingAligned(
+                aligned, lines: lines, in: attributedString, containerWidth: lineWidth
+            ))
         }
 
-        guard var chunk = frame(length: probeLength) else { return nil }
+        guard var chunk = frame(from: startLocation, length: probeLength) else { return nil }
         var length = probeLength
 
         // 예산이 문자열 끝 전에 잘랐는데 한 시각 줄뿐이면 그 줄을 쪼개지 않게
@@ -83,7 +86,7 @@ enum HwpLineBreaker {
                 typesetter, startLocation, Double(breakWidth)
             )
             let extended = min(max(1, breakLength), fullLength - startLocation)
-            if extended > probeLength, let remade = frame(length: extended) {
+            if extended > probeLength, let remade = frame(from: startLocation, length: extended) {
                 chunk = remade
                 length = extended
             }
@@ -98,6 +101,17 @@ enum HwpLineBreaker {
             : chunk.lines.count
         let keepCount = min(proposedKeepCount, remainingLineBudget)
         guard keepCount > 0 else { return nil }
+        if let refit = lineEndSpacingRefit(
+            chunk: chunk, keepCount: keepCount,
+            context: RefitContext(
+                typesetter: typesetter, attributedString: attributedString, lineWidth: lineWidth,
+                chunkEnd: startLocation + length, cutBeforeEnd: cutBeforeEnd,
+                lineBudget: remainingLineBudget
+            ),
+            frame: frame(from:length:)
+        ) {
+            return refit
+        }
         let lastRange = CTLineGetStringRange(chunk.lines[keepCount - 1])
         let nextStart = lastRange.location + lastRange.length
         guard nextStart > startLocation else { return nil }
@@ -160,7 +174,7 @@ enum HwpLineBreaker {
     }
 
     /// CTParagraphStyle의 정렬. 없으면 nil.
-    private static func textAlignment(of style: CTParagraphStyle?) -> CTTextAlignment? {
+    static func textAlignment(of style: CTParagraphStyle?) -> CTTextAlignment? {
         guard let style else { return nil }
         var value = CTTextAlignment.natural
         guard CTParagraphStyleGetValueForSpecifier(
@@ -197,7 +211,7 @@ enum HwpLineBreaker {
     /// rescue 단일 줄의 실제 가용 폭 — CT의 tailIndent 규약(≤0이면 컨테이너 trailing
     /// 기준, >0이면 leading 기준 절대 위치)을 반영해 오른쪽 여백을 뺀다. lineOriginX는
     /// CT가 이미 고른 leading origin(첫 줄/이어지는 줄 들여쓰기 포함).
-    private static func availableLineWidth(
+    static func availableLineWidth(
         containerWidth lineWidth: CGFloat,
         lineOriginX: CGFloat,
         paragraphStyle: CTParagraphStyle?

@@ -136,7 +136,8 @@ public enum HwpDrawnTextLayout {
         let replacement = HwpWordJustification.justifiedLine(
             frameLine: frameLine,
             attributedString: attributedString,
-            availableWidth: lineWidth - placement.ctOriginX
+            availableWidth: lineWidth - placement.ctOriginX,
+            lineOriginX: placement.ctOriginX
         )
         let range = CTLineGetStringRange(frameLine)
         let finalLine = replacement?.line ?? frameLine
@@ -341,6 +342,10 @@ public enum HwpDrawnTextLayout {
         var ascent: CGFloat = 0
         var descent: CGFloat = 0
         var leading: CGFloat = 0
+        // 판정은 줄 끝 공백까지 넣은 typographic 폭 그대로다 (#260) — 내용 폭으로 바꾸면 줄 나눔이
+        // 바뀌는 문단이 생기는데(헌법주석 렌더 387·918·971쪽: 한글이 한 줄인 387쪽은 맞고 두 줄인 918·
+        // 971쪽은 틀린다) 그 결정에 필요한 것은 폭이 아니라 한글의 줄 수다. 내용 폭은 정렬
+        // (`slightOverflowAlignmentOffset`)에만 쓴다 — 접힌 줄은 어느 쪽이든 한 줄이다.
         let naturalWidth = CGFloat(
             CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
         )
@@ -444,7 +449,16 @@ public enum HwpDrawnTextLayout {
             kCTParagraphStyleAttributeName as NSAttributedString.Key,
             at: 0, effectiveRange: nil
         ), CFGetTypeID(style as CFTypeRef) == CTParagraphStyleGetTypeID() else { return 0 }
-        let naturalWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        // 내용 폭 — 줄 끝 공백(과 매달린 양수 자간)은 정렬에 넣지 않는다. CoreText가 보통 줄을 정렬하는
+        // 폭과 같다 (#260: 넣으면 그 몫의 절반·전부만큼 왼쪽으로 밀렸다). 마지막 글자의 자간 중
+        // CoreText가 넣고 잰 몫(`lineEndExcess`)도 빼되, 보통 줄의 `lineEndSpacingAligned`처럼 그 몫을 뺀
+        // 폭이 줄에 들 때만이다 — 줄 끝 빈칸 하나로 이 경로에 들어온 줄이 자간만큼 튀지 않게 하고(#260
+        // 리뷰), 글꼴 차로 정말 넘치는 줄은 보통 경로와 같이 그대로 둔다 (noori 1쪽 가운데 정렬 줄).
+        let range = NSRange(location: 0, length: attributedString.length)
+        let content = HwpLineBreaker.contentWidth(of: line)
+        let excess = HwpLetterSpacing.lineEndExcess(in: attributedString, range: range)
+        let naturalWidth = content - excess <= lineWidth + HwpLineBreaker.lineEndTolerance
+            ? content - excess : content
         var alignment = CTTextAlignment.natural
         let paragraphStyle = style as! CTParagraphStyle // swiftlint:disable:this force_cast
         CTParagraphStyleGetValueForSpecifier(

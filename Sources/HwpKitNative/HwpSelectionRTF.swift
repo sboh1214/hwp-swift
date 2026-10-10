@@ -29,6 +29,7 @@ enum HwpSelectionRTF {
     /// - 그대로 두는 CT 키 — 이름이 표준 키와 같다: `kCTFont`("NSFont",
     ///   CTFont는 NSFont/UIFont와 toll-free 브리지)·`kCTKern`("NSKern")·
     ///   `kCTStrokeWidth`("NSStrokeWidth").
+    /// - 자간: "CTTracking"(#260 — 커닝 관여 글리프·양수 자간)은 `.kern`에 더해 옮긴다.
     /// - 키 개명: "CTForegroundColor"(CGColor) → `.foregroundColor`(플랫폼 색).
     /// - 기준선: 공급원은 `hwp.glyphBaselineOffset`(양수 = 위, NS 규약 일치 —
     ///   글자위치·첨자 이동 합산) 하나다 → `.baselineOffset`. 같은 정보를
@@ -72,6 +73,8 @@ enum HwpSelectionRTF {
         NSAttributedString.Key(kCTBaselineOffsetAttributeName as String)
     private static let ctForegroundFromContextKey =
         NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String)
+    private static let ctTrackingKey =
+        NSAttributedString.Key(kCTTrackingAttributeName as String)
 
     static func normalizedAttributes(
         _ attributes: [NSAttributedString.Key: Any]
@@ -116,6 +119,13 @@ enum HwpSelectionRTF {
         // 글자가 앱 렌더와 반대 방향으로 붙는다. 글자위치 0이면 glyph 키가
         // 없고 오프셋 없음이 올바른 결과다.
         normalized.removeValue(forKey: ctBaselineOffsetKey)
+        // 자간(#260)은 글자마다 kern 또는 tracking에 실린다 (`HwpLetterSpacing.Carrier`). RTF에는
+        // tracking이 없어 작성기가 그 키를 버리므로 kern으로 옮긴다 — 두 속성 모두 글자 묶음 뒤에 더해지는
+        // 간격이라 뜻이 같고, tracking 글자는 kern이 0이다.
+        if let tracking = normalized.removeValue(forKey: ctTrackingKey) as? NSNumber {
+            let kern = (normalized[.kern] as? NSNumber)?.doubleValue ?? 0
+            normalized[.kern] = NSNumber(value: kern + tracking.doubleValue)
+        }
         if let offset =
             attributes[HwpAttributedStringKey.glyphBaselineOffset] as? NSNumber
         {

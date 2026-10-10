@@ -268,6 +268,16 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   높이로 고쳐 쓰므로 `HwpKitTests/FixtureInlineTableActualHeightTests`가 높이를 원본 값으로
   되돌리고 줄 캐시를 지운 재조판을 저장된 줄 캐시·PDF 좌표(README의 표)와 대조한다. HWPX 쌍은
   `HwpxFixtures/inline-table-actual-height`.
+- `letter-spacing`: **한글 문서**(호환 문서 대상 프로그램 `HWP201X`)에 한글 슬롯 Apple SD 산돌고딕
+  Neo·라틴 슬롯 Menlo 20pt로 글자 모양 자간(표 33) 표본 11문단 — 한글·라틴 자간 ±20%, 라틴 장평 50%·
+  상대 크기 50%와 자간, 한글 자간과 빈칸, 글꼴에 어울리는 빈칸, 묶음 빈칸·고정폭 빈칸, 왼쪽 여백으로 줄
+  폭을 좁힌 줄 끝 자간과 줄 나눔, 오른쪽 정렬 줄 끝 글자 — 을 실은 합성 HWPX(줄 배치 정보 없음)를
+  Hancom Office HWP for macOS 12.30.0 build 6523으로 2026-10-08에 열어 `.hwp`·`.hwpx`로 저장(1쪽).
+  한글이 자간을 **글자 크기가 아니라 그 글자의 전진량**(상대 크기·장평 적용 뒤)의 %로 더하고, 보통·
+  고정폭 빈칸에는 라틴 항목 자간을 빈칸 폭의 %로 더하며 묶음 빈칸에는 더하지 않고, 줄의 **마지막
+  글자에는 자간을 주지 않고** 줄을 맞추는 규칙(#260)의 실물 근거다. 같은 세션의 PDF 내보내기 글자
+  원점(README의 표)이 `HwpKitTests/FixtureLetterSpacingTests`의 오라클이고 두 글꼴이 결정론 resolver의
+  글꼴과 같아 쪽 좌표를 기기 무관하게 핀한다. HWPX 쌍은 `HwpxFixtures/letter-spacing`.
 - `mixed-size-decorations`: **한글 문서**(호환 문서 대상 프로그램 `HWP201X`)의 한 줄에 크기가 다른
   글자·문단 끝 글자·한 줄 끝(코드 10)·책갈피·글자처럼 취급 표를 섞고 글자 아래·위 밑줄·긴 점선 밑줄·
   취소선을 실은 합성 HWPX(한글 슬롯 Apple SD 산돌고딕 Neo, 라틴 슬롯 Menlo, 기본 40pt·상대 크기 50%
