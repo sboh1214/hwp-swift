@@ -42,6 +42,20 @@ enum HwpKerningCoverage {
             words.allSatisfy { $0 == 0 }
         }
 
+        /// 든 글리프 — 오름차순.
+        var members: [UInt16] {
+            var result: [UInt16] = []
+            for (index, word) in words.enumerated() where word != 0 {
+                var bits = word
+                while bits != 0 {
+                    let bit = bits.trailingZeroBitCount
+                    result.append(UInt16(index * 64 + bit))
+                    bits &= bits - 1
+                }
+            }
+            return result
+        }
+
         func contains(_ glyph: CGGlyph) -> Bool {
             let index = Int(glyph) >> 6
             return index < words.count && words[index] & (1 << (UInt64(glyph) & 63)) != 0

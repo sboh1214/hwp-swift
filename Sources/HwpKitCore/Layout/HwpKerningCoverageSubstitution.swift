@@ -26,14 +26,27 @@ extension HwpKerningCoverage {
             outputs.append(result)
         }
 
-        /// 규칙 `index`의 결과 가운데 `set`에 드는 것이 있는가.
-        func hasResult(of index: Int, in set: GlyphSet) -> Bool {
-            for position in (index == 0 ? 0 : ends[index - 1]) ..< ends[index]
-                where set.contains(outputs[position])
-            {
-                return true
+        /// 결과 글리프마다 그 글리프를 결과로 갖는 규칙들 — `rules[starts[g] ..< starts[g + 1]]`가 글리프 `g`의
+        /// 규칙 번호다(결과 → 규칙 역색인). 결과 하나를 한 번씩만 본다.
+        func rulesByResult() -> (starts: [Int32], rules: [Int32]) {
+            var starts = [Int32](repeating: 0, count: 65537)
+            for output in outputs {
+                starts[Int(output) + 1] += 1
             }
-            return false
+            for glyph in 0 ..< 65536 {
+                starts[glyph + 1] += starts[glyph]
+            }
+            var cursor = starts
+            var rules = [Int32](repeating: 0, count: outputs.count)
+            var rule = 0
+            for (position, output) in outputs.enumerated() {
+                while position >= ends[rule] {
+                    rule += 1
+                }
+                rules[Int(cursor[Int(output)])] = Int32(rule)
+                cursor[Int(output)] += 1
+            }
+            return (starts, rules)
         }
     }
 
@@ -62,15 +75,20 @@ extension HwpKerningCoverage {
             }
         }
         guard parsed else { return false }
-        var changed = true
-        while changed {
-            changed = false
-            guard walk.spend(rules.inputs.count) else { return false }
-            for index in rules.inputs.indices where !walk.set.contains(rules.inputs[index])
-                && rules.hasResult(of: index, in: walk.set)
-            {
-                walk.set.insert(rules.inputs[index])
-                changed = true
+        // 집합에 든 글리프에서 거꾸로 — 그 글리프를 결과로 갖는 규칙의 입력을 넣고, 새로 든 입력을 다시 따른다.
+        // 결과(역색인 항목)마다 한 번씩만 보므로 일이 결과 수에 비례한다. 패스마다 모든 규칙의 결과를 다시 훑으면
+        // 의존 사슬 길이 × 결과 수라, 결과가 긴 다중 치환과 고리 1,000개짜리 사슬을 섞은 조작 표가 예산 안에서
+        // 결과를 수억 번 검사했다 (#260 PR 리뷰 실측: 2MB GSUB 디버그 빌드 137초).
+        guard walk.spend(rules.inputs.count + rules.outputs.count) else { return false }
+        let index = rules.rulesByResult()
+        var pending = walk.set.members
+        while let glyph = pending.popLast() {
+            for entry in index.starts[Int(glyph)] ..< index.starts[Int(glyph) + 1] {
+                let input = rules.inputs[Int(index.rules[Int(entry)])]
+                if !walk.set.contains(input) {
+                    walk.set.insert(input)
+                    pending.append(input)
+                }
             }
         }
         return true

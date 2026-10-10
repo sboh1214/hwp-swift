@@ -221,6 +221,40 @@ import XCTest
             expect(unparsed).to(beNil())
         }
 
+        func testSubstitutionClosureVisitsEachResultOnce() {
+            // 조작된 GSUB(약 2MB): 결과가 집합 밖인 6만 5천 글리프짜리 다중 치환 15개 + 고리 1,000개짜리 단일 치환
+            // 사슬(앞 고리가 먼저 와 패스마다 한 고리씩만 든다). 패스마다 모든 규칙의 결과를 다시 훑던 구현은 작업
+            // 예산(규칙 수만 셌다) 안에서 결과를 약 10억 번 검사해 디버그 빌드 137초가 걸렸다 (#260 PR 리뷰). 결과 →
+            // 규칙 역색인으로 결과마다 한 번만 보면 0.4초다 — 시간 문턱은 둘 사이에서 넉넉히 잡았다.
+            var subtables: [(type: Int, subtable: Data)] = []
+            for input in 0 ..< 15 {
+                // 형식 1 · 커버리지 8 · 순서열 1개 · 순서열 14 — 커버리지를 순서열 앞에 둬 오프셋이 16비트에 든다.
+                var long = Bytes()
+                long.u16(1, 8, 1, 14)
+                long.data.append(Self.coverage1([100 + input]))
+                long.u16(65000)
+                for _ in 0 ..< 65000 {
+                    long.u16(5000)
+                }
+                subtables.append((2, long.data))
+            }
+            for link in 0 ..< 1000 {
+                subtables.append((1, Self.singleSubstitution([1000 + link], [1001 + link])))
+            }
+            var adjustment = Bytes()
+            adjustment.u16(1, 6, 0)
+            adjustment.data.append(Self.coverage1([2000]))
+            let gpos = Self.layoutTable([(1, adjustment.data)])
+            let gsub = Self.extensionLayoutTable(subtables)
+            let started = Date()
+            let set = HwpKerningCoverage.parse(kern: nil, kerx: nil, gpos: gpos, gsub: gsub)
+            expect(Date().timeIntervalSince(started)) < 20
+            expect(set?.contains(1000)) == true
+            expect(set?.contains(1500)) == true
+            expect(set?.contains(100)) == false
+            expect(set?.contains(5000)) == false
+        }
+
         func testSharedOffsetsAreWalkedOnce() {
             // 조작된 표: 룩업 1,000개가 한 룩업을, 그 룩업의 부분표 1,000개가 한 부분표(단일 조정, 커버리지
             // 2글리프)를 가리킨다. 한 번만 훑으면 약 2,000 항목이고, 자리마다 다시 훑으면 1,000 × (1,000 +
@@ -312,6 +346,35 @@ import XCTest
             expect(HwpKerningCoverage.glyphs(of: gothic)?.contains(glyph(0x41, gothic))) == true
             let menlo = CTFontCreateWithName("Menlo-Regular" as CFString, 12, nil)
             expect(HwpKerningCoverage.glyphs(of: menlo)).to(beNil())
+        }
+    }
+
+    extension HwpKerningCoverageTests {
+        /// 확장 룩업(GSUB 7)만으로 된 GSUB — 부분표 바이트를 표 끝에 몰아 32비트 오프셋으로 가리킨다(큰 부분표용).
+        private static func extensionLayoutTable(
+            _ subtables: [(type: Int, subtable: Data)]
+        ) -> Data {
+            let listStart = 10
+            let lookupSize = 16 // 머리 8 + 확장 부분표 8
+            let lookupsStart = listStart + 2 + subtables.count * 2
+            var data = Bytes()
+            data.u16(1, 0, 0, 0, listStart)
+            data.u16(subtables.count)
+            for index in subtables.indices {
+                data.u16(lookupsStart - listStart + index * lookupSize)
+            }
+            var blobOffset = lookupsStart + subtables.count * lookupSize
+            for (index, entry) in subtables.enumerated() {
+                let extensionStart = lookupsStart + index * lookupSize + 8
+                data.u16(7, 0, 1, 8)
+                data.u16(1, entry.type)
+                data.u32(blobOffset - extensionStart)
+                blobOffset += entry.subtable.count
+            }
+            for entry in subtables {
+                data.data.append(entry.subtable)
+            }
+            return data.data
         }
     }
 #endif
