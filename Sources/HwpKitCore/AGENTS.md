@@ -1706,12 +1706,16 @@ run 블록 #165와 같은 표) 각주 이어짐의 본문 하한(`footnoteBodyBo
     분류(그리스·키릴·`①`·`★` 등 — 한글은 기호 항목의 자간을 준다, #261), MS 워드 호환
     문서에서 줄이 닫는 부호(`)`·`.`)로 끝나면 그 앞 글자도 자간을 잃는 것(#260 `lines` 실측 3줄 — 줄 맞춤에
     드는지 미확인), 글머리표 기호와 본문 사이 거리(한글은 정의의 본문과의 거리 50% = 10pt, 우리는 기호 뒤
-    빈칸 글꼴 폭), **글자처럼 취급 개체의 그리는 자리**(main부터) — 개체 앵커 x(`inlineAnchors`)가 마커 run의
-    자리가 아니라 `CTLineGetOffsetForStringIndex`인데, CoreText는 앞 글자에 kern·tracking이 있으면 그 캐럿을
-    자간 틈의 **가운데**에 둔다(실측: kern·tracking 어느 쪽이든, 마커에 남은 kern과 무관). 그래서 개체가 앞 글자
-    자간의 절반만큼 오른쪽에 그려진다 — 뒤 글자는 마커 run 폭 뒤에 놓여 제자리다(`probes/260` so260-misc의 글자처럼
-    취급 표 앞 글자 −20%: 셀 글자가 마커 run보다 `b` kern −2.388pt의 절반 1.19pt·`가` −3.88pt의 절반 1.94pt 오른쪽,
-    한글 대비 +1.13·+1.98pt; main도 같은 기제로 그 글자 kern −4pt의 절반 2.0pt 오른쪽이었다).
+    빈칸 글꼴 폭), **글자처럼 취급 개체가 그려지는 자리**(#276, 이 수정 전부터) — 개체 앵커 x(`inlineAnchors`)가
+    마커 run의 자리가 아니라 `CTLineGetOffsetForStringIndex`(캐럿)인데, CoreText는 앞 글자에 kern이 있으면 그
+    캐럿을 마커 run에서 kern의 **절반**만큼 떨어진 곳에 둔다(양수면 왼쪽, 음수면 오른쪽). tracking은 글꼴마다
+    다르다 — 함초롬바탕·Times New Roman·Helvetica는 0, Menlo·Apple SD 산돌고딕 Neo는 kern과 같다(마커에 남은
+    kern과는 무관, `probes/260/caret`). 그래서 개체가 그 몫만큼 옆에 그려지고 뒤 글자는 마커 run 폭 뒤에 놓여
+    제자리다. 자간만의 문제가 아니다 — 빈칸 폭 패스(#249)가 빈칸에 kern을 주므로 **빈칸 뒤 개체**가 가장 흔하다
+    (`inline-object-baseline`의 그림 18개가 main·이 수정 모두 한글보다 1.2–4.0pt 왼쪽 — 40pt 줄 빈칸 kern +8 →
+    −4). 자간 쪽은 so260-misc 글자처럼 취급 표 앞 글자 −20%에서 셀 글자가 마커 run보다 `b` −2.388pt의 절반
+    1.19pt·`가` −3.88pt의 절반 1.94pt 오른쪽(main은 kern ±4pt의 절반 2.0pt — 양수 자간에서도), 이 수정의 양수
+    자간은 함초롬바탕에서 tracking이라 어긋나지 않는다.
   - 가드: `HwpLetterSpacingTests`(묶음·대체 글꼴·운반 속성 선택·앞 빈칸·혼용 = tracking 등가(macOS·iOS 공통
     글꼴)·줄 끝 자간·라벨(한글 마지막 글자의 kern 운반 속성)·글머리표·각주 번호·문서 캐시의 커닝 집합 1회
     조회)·`HwpLineEndFieldEndTests`(실제 빌더로 만든 링크 끝 — 줄 끝 자간·왼쪽·오른쪽·가운데 정렬의 평문과 글자
