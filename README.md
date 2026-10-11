@@ -30,12 +30,12 @@ Xcode에서 ```File``` > ```Swift Packages``` > ```Add Package Dependency...``` 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/sboh1214/hwp-swift.git", .upToNextMinor(from: "0.18.0")),
+    .package(url: "https://github.com/sboh1214/hwp-swift.git", .upToNextMinor(from: "0.19.0")),
 ],
 ```
 
 > 이 저장소는 1.0 전까지 파괴 변경을 minor 버전에 싣습니다.
-> `.upToNextMinor(from: "0.18.0")`은 `0.18.0..<0.19.0`만 허용하므로, minor 버전은
+> `.upToNextMinor(from: "0.19.0")`은 `0.19.0..<0.20.0`만 허용하므로, minor 버전은
 > [릴리스 노트](https://github.com/sboh1214/hwp-swift/releases)를 확인한 뒤 올리는 것을 권장합니다.
 
 ## 라이브러리 구조
