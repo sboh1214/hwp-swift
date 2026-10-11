@@ -25,7 +25,7 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
    있다 — 4단계). 새로 저작하는 쌍(`section-marks`·`section-page-starts-on`·
    `line-shapes`·`script-decorations`·`section-page-number-skip`·`compat-decorations`·
    `dash-patterns`·`hwp2007-decorations`·`hyperlink-click-band`·`inline-object-baseline`·
-   `inline-object-marker-size`·`inline-table-actual-height`·`mixed-size-decorations`·
+   `inline-object-marker-size`·`inline-table-actual-height`·`letter-spacing`·`mixed-size-decorations`·
    `ms-word-line-shapes`·`ms-word-paragraph-end-box`·`ms-word-script-strikethrough`·
    `ms-word-space-width`·`note-reference-strikethrough`·`page-end-line-box`·
    `paragraph-end-char-size`·`script-strikethrough-large`·`space-width`·
@@ -183,6 +183,12 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   글자 취소선 높이의 89/140배인지 첨자 글리프 축소 비율 0.64배인지를 가를 수 없어(차가 0.015·0.03pt로 한글
   PDF의 장치 좌표 0.12pt 안), 한글이 그 높이를 ⌊89 × 기본 크기(HWPUNIT) ÷ 400⌋에 두는 규칙을 렌더 해시·
   골든이 잡지 못하던 자리의 실물 근거다 — 50–160pt에서는 그 차가 0.075–0.24pt다.
+  글자 모양 자간은 #260에서 `letter-spacing` 쌍으로 저작했다 — 자간을 장평·상대 크기·빈칸 종류·줄 끝과
+  갈라 실어, 한글이 자간을 글자 크기가 아니라 그 글자의 전진량(상대 크기·장평 적용 뒤)의 %로 더하고 보통·
+  고정폭 빈칸에는 라틴 항목 자간을 빈칸 폭의 %로 더하며(묶음 빈칸은 더하지 않는다) 줄의 마지막 글자에는
+  자간을 주지 않고 줄 나눔·오른쪽 정렬을 맞추는 규칙을 한 문서의 PDF 글자 원점으로 가르는 실물 근거다.
+  슬롯별 `hh:spacing`·`hh:ratio`·`hh:relSz`와 `hh:charPr@useFontSpace`, `hp:nbSpace`·`hp:fwSpace`가 HWP
+  쌍과 같은 자간·장평·상대 크기·빈칸 문자로 옮겨지는 표본이기도 하다.
 
 ## manifest 작성 기준
 

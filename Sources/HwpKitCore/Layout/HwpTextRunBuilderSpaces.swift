@@ -23,15 +23,14 @@ import Foundation
 ///   절반(한글 슬롯 크기 × 0.25 × 한글 장평)이다 — 둘 다 U+00A0으로 조판되므로 고정폭 빈칸은
 ///   표식(`HwpAttributedStringKey.fixedWidthSpace`)으로 가른다.
 ///
-/// **자간은 이 수정의 축이 아니라 종전 동작을 그대로 둔다** — 고정 폭 빈칸에는 자간이 없고(빈칸
-/// kern을 폭으로 덮어쓴다), 글꼴 폭 빈칸은 run의 자간 kern(라틴 크기 × 라틴 자간 %,
-/// `latinSpacingKern`)을 지닌다. 한글은 보통·고정폭 빈칸에 라틴 자간을 **폭의 %로** 붙이지만(같은
-/// 실측: 라틴 자간 20%면 고정 폭 10pt → 12pt, 글꼴 폭 6pt → 7.2pt, 묶음 빈칸은 그대로) 그것은 글자
-/// 자간과 한 모델이다 — 한글은 글자 자간도 **글자 전진량의 %**로 붙이는데(라틴 `a` 11.4pt → 자간
-/// 20%에 13.68pt) 조판은 글자 크기의 %(`HwpTextRunBuilder.attributes(for:script:)`)로 붙인다.
-/// 빈칸에만 한글 모델을 넣으면 음수 자간 문서에서 빈칸만 좁아지고 라틴 글자·따옴표는 여전히
-/// 한글보다 좁아 줄 폭이 한글보다 짧아진다(실측: `noori` 2쪽 자간 −7% 줄이 한 글자를 더 담아
-/// 줄바꿈이 한글과 갈렸다). 그래서 둘을 함께 바꾼다 (#260).
+/// **자간은 빈칸 폭의 %다** (#260): 보통 빈칸(고정 폭·글꼴 폭 모두)과 고정폭 빈칸은 **라틴 항목 자간**을
+/// 그 폭의 %로 더하고, 묶음 빈칸은 자간을 받지 않는다. 한글 항목 자간은 빈칸에 닿지 않는다 (한글 12.30
+/// build 6523 실측: 라틴 자간 +20%면 고정 폭 10pt → 12pt, 글꼴 폭 6pt → 7.2pt, 고정폭 빈칸 5pt → 6pt,
+/// 묶음 빈칸 10pt 그대로, −20%면 고정 폭 8pt; 라틴 장평·상대 크기는 고정 폭에 닿지 않으므로 그 폭의 %도
+/// 같다 — 장평 50%·자간 +20%에서 12pt; 한글 자간 ±20%는 고정 폭 10pt 그대로, 한글 장평 50%면 5pt).
+/// 글자 자간과 한 모델이다 — 글자도 **그 글자 전진량의 %**를 받는다 (`HwpLetterSpacing`). #249는 빈칸
+/// 자간만 이 모델로 바꾸면 음수 자간 문서에서 줄이 한글보다 짧아져(`noori` 2쪽 −7% 줄) 두 축을 함께
+/// 바꾸려고 종전 동작(고정 폭에는 자간 없음, 글꼴 폭에는 라틴 크기 × 라틴 자간 %)을 남겨 두었다.
 struct HwpSpaceWidthMetrics: Equatable {
     /// 빈칸의 종류 — 폭 규칙이 갈린다.
     enum Kind: Equatable {
@@ -47,9 +46,8 @@ struct HwpSpaceWidthMetrics: Equatable {
     let slotSizes: [CGFloat]
     /// 슬롯별 장평 (배율, 1 = 100%).
     let slotScales: [CGFloat]
-    /// 빈칸 run이 지니던 자간 kern (pt, 라틴 크기 × 라틴 자간 %) — `attributes(for:script:)`가
-    /// 라틴 chunk에 싣는 값과 같다. 글꼴 폭 빈칸만 종전처럼 이것을 지닌다.
-    let latinSpacingKern: CGFloat
+    /// 라틴 항목 자간 (배율, 0.2 = 20%) — 보통·고정폭 빈칸 폭에 곱해 더한다 (#260).
+    let latinSpacingRatio: CGFloat
 
     init(shape: CoreHwp.HwpCharShape) {
         let base = HwpUnits.points(fromHwpUnit: shape.baseSize)
@@ -59,9 +57,9 @@ struct HwpSpaceWidthMetrics: Equatable {
         slotScales = (0 ..< 7).map { slot in
             CGFloat(Self.value(at: slot, in: shape.faceScaleX, default: 100)) / 100
         }
-        let latin = HwpScript.english.slotIndex
-        latinSpacingKern = CGFloat(Self.value(at: latin, in: shape.faceSpacing, default: 0))
-            * slotSizes[latin] / 100
+        latinSpacingRatio = CGFloat(
+            Self.value(at: HwpScript.english.slotIndex, in: shape.faceSpacing, default: 0)
+        ) / 100
     }
 
     /// 고정 폭 (pt) — 한글 슬롯 크기 × `HwpRenderTuning.Text.fixedSpaceEmRatio` × 한글 장평.
@@ -76,16 +74,16 @@ struct HwpSpaceWidthMetrics: Equatable {
     }
 
     /// 빈칸의 진행 폭 (pt) — `fontWidth`는 보통 빈칸이 글꼴 폭을 쓸 때의 그 폭(nil이면 고정 폭).
-    /// 글꼴 폭에만 run 자간 kern(`latinSpacingKern`)이 더해진다 (종전 동작).
+    /// 보통·고정폭 빈칸은 라틴 자간을 폭의 %로 더하고 묶음 빈칸은 더하지 않는다 (#260).
     func advance(of kind: Kind, fontWidth: CGFloat? = nil) -> CGFloat {
         switch kind {
         case .ordinary:
-            fontWidth.map { $0 + latinSpacingKern } ?? fixedWidth
+            (fontWidth ?? fixedWidth) * (1 + latinSpacingRatio)
         case .nonBreaking:
             fixedWidth
         case .fixedWidth:
             fixedWidth / HwpRenderTuning.Text.fixedSpaceEmRatio
-                * HwpRenderTuning.Text.fixedWidthSpaceEmRatio
+                * HwpRenderTuning.Text.fixedWidthSpaceEmRatio * (1 + latinSpacingRatio)
         }
     }
 
@@ -155,8 +153,9 @@ struct HwpSpaceWidthMetrics: Equatable {
 /// chunk의 첫 글자가 정한다.
 extension HwpTextRunBuilder {
     /// `range` 안의 보통 빈칸(U+0020)과 묶음·고정폭 빈칸(U+00A0)에 한글의 폭을 kern으로
-    /// 준다 (`HwpSpaceWidthMetrics`). 빈칸 run의 기존 kern(글자 모양 자간)을 폭으로 **덮어쓴다** —
-    /// 글꼴 폭 빈칸만 그 자간을 폭에 다시 더한다 (종전 동작, `HwpSpaceWidthMetrics` 문서).
+    /// 준다 (`HwpSpaceWidthMetrics`). 빈칸의 기존 kern을 폭으로 **덮어쓴다** — 자간 chunk의 빈칸은
+    /// 자간 0(kern 0)을 받고(`HwpLetterSpacing.segments`), 빈칸의 자간은 여기서 라틴 항목 자간을 빈칸
+    /// 폭의 %로 더한다(보통·고정폭 빈칸만, 묶음 빈칸은 없다 — #260).
     ///
     /// `range` 밖의 글자는 이웃으로 보지 않는다 — 문단 머리(글머리표·문단 번호 라벨)는 본문
     /// 글자가 아니므로 본문 첫 빈칸은 줄 시작과 같다. 건너뛰는 빈칸: 빈 줄 앵커(폭이 화면에

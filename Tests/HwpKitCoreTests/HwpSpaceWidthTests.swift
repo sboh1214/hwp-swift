@@ -56,15 +56,29 @@ import XCTest
             expect(latinRatio.fixedWidth).to(beCloseTo(10, within: 0.000_1))
         }
 
-        func testSpacingKeepsItsPreviousBehaviour() {
-            // 자간은 이 수정의 축이 아니다 — 고정 폭에는 종전처럼 자간이 없고, 글꼴 폭은 종전처럼
-            // run 자간 kern(라틴 크기 × 라틴 자간 %)을 지닌다. 한글 자간은 어느 쪽에도 없다.
+        func testLatinSpacingScalesTheSpaceWidth() {
+            // 보통·고정폭 빈칸은 라틴 자간을 폭의 %로 더하고 묶음 빈칸은 더하지 않는다 (#260 실측:
+            // 라틴 +20%면 고정 폭 10 → 12pt, 글꼴 폭 6 → 7.2pt, 고정폭 빈칸 5 → 6pt, 묶음 빈칸 10pt).
+            // 한글 자간(−20%)은 어느 빈칸에도 닿지 않는다.
             let spaced = HwpSpaceWidthMetrics(shape: shape(spacing: [-20, 20, 0, 0, 0, 0, 0]))
-            expect(spaced.latinSpacingKern).to(beCloseTo(4, within: 0.000_1))
-            expect(spaced.advance(of: .ordinary)).to(beCloseTo(10, within: 0.000_1))
-            expect(spaced.advance(of: .ordinary, fontWidth: 6)).to(beCloseTo(10, within: 0.000_1))
+            expect(spaced.latinSpacingRatio).to(beCloseTo(0.2, within: 0.000_1))
+            expect(spaced.advance(of: .ordinary)).to(beCloseTo(12, within: 0.000_1))
+            expect(spaced.advance(of: .ordinary, fontWidth: 6)).to(beCloseTo(7.2, within: 0.000_1))
             expect(spaced.advance(of: .nonBreaking)).to(beCloseTo(10, within: 0.000_1))
-            expect(spaced.advance(of: .fixedWidth)).to(beCloseTo(5, within: 0.000_1))
+            expect(spaced.advance(of: .fixedWidth)).to(beCloseTo(6, within: 0.000_1))
+            let negative = HwpSpaceWidthMetrics(shape: shape(spacing: [0, -20, 0, 0, 0, 0, 0]))
+            expect(negative.advance(of: .ordinary)).to(beCloseTo(8, within: 0.000_1))
+            expect(negative.advance(of: .ordinary, fontWidth: 6)).to(beCloseTo(4.8, within: 0.000_1))
+            expect(negative.advance(of: .nonBreaking)).to(beCloseTo(10, within: 0.000_1))
+            expect(negative.advance(of: .fixedWidth)).to(beCloseTo(4, within: 0.000_1))
+            // 라틴 장평·상대 크기는 고정 폭에 닿지 않으므로 자간의 기준도 아니다 (실측: 라틴 장평 50%·
+            // 자간 +20%에서도 12pt).
+            let scaled = HwpSpaceWidthMetrics(shape: shape(
+                relativeSize: [100, 50, 100, 100, 100, 100, 100],
+                scaleX: [100, 50, 100, 100, 100, 100, 100],
+                spacing: [0, 20, 0, 0, 0, 0, 0]
+            ))
+            expect(scaled.advance(of: .ordinary)).to(beCloseTo(12, within: 0.000_1))
         }
 
         func testFontWidthUsesTheAssignedSlotSizeAndRatio() {
@@ -226,12 +240,16 @@ import XCTest
             }
         }
 
-        func testFixedSpaceOverridesTheRunLetterSpacing() throws {
-            // 빈칸 run의 kern(글자 모양 자간 = 크기 × %)을 빈칸 폭으로 덮어쓴다 — 라틴 자간
-            // 20%여도 빈칸은 6pt다 (자간을 더하면 8.4pt가 된다).
+        func testFixedSpaceCarriesTheLatinSpacingAsAPercentOfItsWidth() throws {
+            // 빈칸의 자간은 빈칸 폭의 % — 12pt 글자 모양(고정 폭 6pt)에 라틴 자간 20%면 7.2pt다. 글자
+            // 크기의 %(종전 run kern 2.4pt)를 더한 8.4pt가 아니고, 자간을 버린 6pt도 아니다.
             let shapes = [UInt32(0): try charShape(faceSpacing: [0, 20, 0, 0, 0, 0, 0])]
             let advances = spaceAdvances(in: build("ab cd", shapes: shapes))
-            expect(advances.first).to(beCloseTo(6, within: 0.01))
+            expect(advances.first).to(beCloseTo(7.2, within: 0.01))
+            // 한글 자간은 빈칸에 닿지 않는다.
+            let hangul = [UInt32(0): try charShape(faceSpacing: [20, 0, 0, 0, 0, 0, 0])]
+            expect(self.spaceAdvances(in: self.build("가 나", shapes: hangul)).first)
+                .to(beCloseTo(6, within: 0.01))
         }
 
         func testFontSpaceTakesThePrecedingCharacterSlot() throws {
@@ -284,16 +302,16 @@ import XCTest
                 .to(beCloseTo(spaceEm * 8.4, within: 0.01))
         }
 
-        func testFontSpaceKeepsTheRunLetterSpacing() throws {
-            // 글꼴 폭 빈칸은 종전처럼 run의 자간 kern을 지닌다 — 라틴 자간 −10%면 Menlo 빈칸 × 12pt에서
-            // 1.2pt를 뺀 폭. 고정 폭 빈칸에는 자간이 없다.
+        func testFontSpaceCarriesTheLatinSpacingAsAPercentOfItsWidth() throws {
+            // 글꼴 폭 빈칸도 폭의 % — 라틴 자간 −10%면 Menlo 빈칸 × 12pt × 0.9, 고정 폭 빈칸은
+            // 6pt × 0.9 = 5.4pt (#260).
             let spacing: [Int8] = [0, -10, 0, 0, 0, 0, 0]
             let fontShapes = [UInt32(0): try charShape(property: 1 << 25, faceSpacing: spacing)]
             expect(self.spaceAdvances(in: self.build("ab cd", shapes: fontShapes)).first)
-                .to(beCloseTo(menloSpaceEm * 12 - 1.2, within: 0.01))
+                .to(beCloseTo(menloSpaceEm * 12 * 0.9, within: 0.01))
             let fixedShapes = [UInt32(0): try charShape(faceSpacing: spacing)]
             expect(self.spaceAdvances(in: self.build("ab cd", shapes: fixedShapes)).first)
-                .to(beCloseTo(6, within: 0.01))
+                .to(beCloseTo(5.4, within: 0.01))
         }
 
         func testBulletHeadingSpaceIsOutsideThePass() throws {

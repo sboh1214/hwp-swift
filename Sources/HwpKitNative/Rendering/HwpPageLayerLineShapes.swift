@@ -52,16 +52,21 @@ extension HwpPageLayer {
     /// (#244 실측 2026-09-30, 슬롯 글꼴이 Apple SD 산돌고딕 Neo·Menlo로 달라도 같다). id 없는 폴백
     /// run은 홀로 선다. 실선은 이 묶음을 쓰지 않고 run마다 그린다 (이어 붙인 사각형과
     /// 같은 결과). 선 모양 키를 실은 run이 하나도 없는 줄은 재지 않는다.
-    func lineShapeSpans(of runs: [CTRun], lineOrigin: CGPoint) -> [CGRect?] {
+    func lineShapeSpans(
+        of runs: [CTRun], attributes runAttributes: [[NSAttributedString.Key: Any]]? = nil,
+        lineOrigin: CGPoint, lineEnd: LineEndEdge? = nil
+    ) -> [CGRect?] {
         var spans: [CGRect?] = Array(repeating: nil, count: runs.count)
-        let attributes = runs.map(runAttributes)
+        let attributes = runAttributes ?? runs.map(self.runAttributes)
         guard attributes.contains(where: {
             $0[HwpAttributedStringKey.underlineShape] != nil
                 || $0[HwpAttributedStringKey.strikethroughShape] != nil
         }) else { return spans }
         var groupStart = 0
         for (index, run) in runs.enumerated() {
-            let bounds = runBounds(of: run, lineOrigin: lineOrigin)
+            var bounds = runBounds(of: run, lineOrigin: lineOrigin)
+            // 줄 끝 글자의 무늬는 그 글자의 자간 없는 전진량에서 끝난다 (`lineEndDecorationEdge`).
+            lineEnd?.adjust(&bounds)
             if index > 0, attributes[index][HwpAttributedStringKey.charShapeId] != nil,
                Self.sameLineShapeGroup(attributes[groupStart], attributes[index]),
                let union = spans[groupStart]

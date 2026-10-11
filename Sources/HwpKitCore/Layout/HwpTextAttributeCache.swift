@@ -59,12 +59,16 @@ final class HwpTextAttributeCache: @unchecked Sendable {
     /// 저장소 접근만 lock으로 감싼다. `HwpFontResolver.FontCache`와 같은 패턴.
     private var attributeStorage: [AttributeKey: [NSAttributedString.Key: Any]] = [:]
     private var tabStorage: [UInt32: [CTTextTab]] = [:]
+    private var fallbackStorage: [FallbackKey: FallbackEntry] = [:]
+    private var coverageStorage: [ObjectIdentifier: CoverageEntry] = [:]
     private let lock = NSLock()
 
     /// 테스트 전용 관측 지점 (`HwpFontResolver.matchCounter`와 같은 역할) — 캐시가
-    /// 실제로 재계산을 없애는지 유닛 테스트가 확인한다. 속성 사전만 센다.
+    /// 실제로 재계산을 없애는지 유닛 테스트가 확인한다. `hits`·`misses`는 속성 사전,
+    /// `coverageMisses`는 커닝 집합(`kerningCoverage`)을 센다.
     private var hits = 0
     private var misses = 0
+    private var coverageMisses = 0
 
     init() {}
 
@@ -84,6 +88,12 @@ final class HwpTextAttributeCache: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return attributeStorage.count
+    }
+
+    var coverageMissCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return coverageMisses
     }
 
     /// `(shapeId, script)`의 텍스트 속성 사전. 없으면 `create`로 만들어 채운다.
@@ -112,6 +122,79 @@ final class HwpTextAttributeCache: @unchecked Sendable {
         }
         lock.unlock()
         return attributes
+    }
+
+    /// 글리프가 없는 글자 묶음을 CoreText가 그리는 대체 글꼴과 그 글리프·전진량 (#260,
+    /// `HwpLetterSpacing.segments`) — (글꼴, 묶음 문자열)의 순수 함수다. 결정론 resolver(Menlo)는
+    /// 한글 음절을 전부 대체 글꼴로 그리므로 묶음마다 `CTFontCreateForString`을 부르면 1,030쪽
+    /// 헌법주석 로드가 4초 늘었다. 열쇠는 글꼴 **값**(`CFEqual`·`CFHash`)이다 — 인스턴스 신원은
+    /// 해제된 글꼴의 주소를 다른 글꼴이 물려받을 수 있다. 묶음은 `String`이 아니라 UTF-16 **단위열**로
+    /// 비교한다 — `String ==`은 정규 동치라 U+2329와 U+3008(정준 분해가 같다)처럼 글리프가 다른 글자가
+    /// 한 항목으로 접힌다.
+    func fallback(
+        for cluster: [UniChar],
+        in font: CTFont,
+        create: () -> HwpLetterSpacing.Fallback?
+    ) -> HwpLetterSpacing.Fallback? {
+        let key = FallbackKey(font: font, cluster: cluster)
+        lock.lock()
+        if let cached = fallbackStorage[key] {
+            lock.unlock()
+            return cached.value
+        }
+        lock.unlock()
+        let value = create()
+        lock.lock()
+        if fallbackStorage.count < maximumEntries {
+            fallbackStorage[key] = FallbackEntry(value: value)
+        }
+        lock.unlock()
+        return value
+    }
+
+    /// 글꼴의 커닝 집합 (#260, `HwpKerningCoverage`) — chunk마다 묻는 자리라 전역 캐시의 열쇠(PostScript
+    /// 이름·파일 경로)를 매번 만들지 않게 글꼴 **인스턴스**로 한 번 더 담는다. 이 캐시가 돌려준 속성
+    /// 사전의 글꼴이 같은 인스턴스로 되돌아오기 때문이다. 항목이 글꼴을 붙들고 있어 해제된 글꼴의
+    /// 주소를 다른 글꼴이 물려받지 않는다.
+    func kerningCoverage(of font: CTFont) -> HwpKerningCoverage.GlyphSet? {
+        let key = ObjectIdentifier(font)
+        lock.lock()
+        if let cached = coverageStorage[key] {
+            lock.unlock()
+            return cached.set
+        }
+        coverageMisses += 1
+        lock.unlock()
+        let set = HwpKerningCoverage.glyphs(of: font)
+        lock.lock()
+        if coverageStorage.count < maximumEntries {
+            coverageStorage[key] = CoverageEntry(font: font, set: set)
+        }
+        lock.unlock()
+        return set
+    }
+
+    private struct CoverageEntry {
+        let font: CTFont
+        let set: HwpKerningCoverage.GlyphSet?
+    }
+
+    private struct FallbackKey: Hashable {
+        let font: CTFont
+        let cluster: [UniChar]
+
+        static func == (lhs: FallbackKey, rhs: FallbackKey) -> Bool {
+            lhs.cluster == rhs.cluster && CFEqual(lhs.font, rhs.font)
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(cluster)
+            hasher.combine(CFHash(font))
+        }
+    }
+
+    private struct FallbackEntry {
+        let value: HwpLetterSpacing.Fallback?
     }
 
     /// 탭 정의 (표 36) 별 CT 탭 스톱. `HwpIndex.textTabs(for:)`는 호출마다
