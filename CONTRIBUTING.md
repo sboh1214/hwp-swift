@@ -136,7 +136,18 @@ python3 -m http.server 8000 --directory ./docs
   같은 안내의 사본**이고 후자는 `docs` 잡이 DocC 산출물 위에 덮어 사이트로
   배포하므로, 하나만 고치면 hwp-swift.sboh.dev가 낡은 안내를 계속 내보냅니다.
 
-드래프트 릴리스를 게시하면 그 시점의 `main`에 태그가 생성됩니다.
+드래프트 릴리스를 게시하면 그 시점의 `main`에 태그가 생성됩니다. 게시는 아래 순서로 합니다.
+
+1. 위 갱신을 담은 릴리스 PR을 머지합니다. `CHANGELOG.md` 헤더의 날짜는 드래프트를 **게시하는
+   날**(KST)입니다. 머지하면 README는 바로, 사이트는 `docs`·`deploy` 잡이 끝나는 몇 분 뒤 새 버전의
+   설치 스니펫을 내보내므로 게시를 미루지 않습니다.
+2. release-drafter가 드래프트를 갱신했는지 확인합니다(버전 번호, 릴리스 PR이 목록에 들었는지).
+   GitHub API 일시 오류로 갱신이 빠져도 잡은 성공으로 끝나므로, 빠졌으면 그 잡을 다시 실행합니다.
+3. 드래프트의 `## Changes`와 `## Breaking changes`를 손으로 채우고 `## Merged PRs`는 그대로 둡니다.
+   release-drafter는 `main` 푸시마다 본문을 템플릿으로 덮어쓰므로 이 단계는 머지한 뒤에 합니다.
+   `body`만 보낸 `PATCH`는 드래프트의 `tag_name`을 `untagged-…`로 되돌리므로, API로 고칠 때는
+   `tag_name`(`X.Y.Z`)을 함께 보내고 게시 전에 `tag_name`이 `X.Y.Z`인지 확인합니다.
+4. 드래프트를 게시합니다.
 
 ### Swift 버전이 새로 출시된 경우
 
