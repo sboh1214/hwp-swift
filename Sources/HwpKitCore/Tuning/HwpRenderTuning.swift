@@ -163,9 +163,9 @@ public enum HwpRenderTuning {
         /// 검증: 아래 밑줄과 같다.
         public static let underlineAboveEdgeRatio: CGFloat = 0.85
 
-        /// 장식선 두께의 종전 연속 근사 — 0.18.0까지 글자 아래·위 밑줄·취소선·글자 가운데 밑줄의 두께가
-        /// 기준 크기 × 이 배율이었고 물결 꼭짓점 계단도 이 배율로 쟀다. 지금은 어느 것도 이 값을 쓰지
-        /// 않는다 (#252): 한글은 실선·대시 획을 기준 크기 X(HWPUNIT)에서
+        /// 장식선 두께의 종전 연속 근사 — 0.18.0에서 글자 아래·위 밑줄·취소선·글자 가운데 밑줄의 두께가
+        /// 글자 크기 × 이 배율이었다. 지금은 어느 것도 이 값을 쓰지 않는다 (#252): 한글은 실선·대시
+        /// 획을 기준 크기 X(HWPUNIT)에서
         /// max(1, round(round(X × 39/1000) ÷ 12))u(u = 0.12pt)로 긋고
         /// (`HwpDecorationLineGeometry.strokeThickness(referenceSize:)` — 10pt 0.36·5pt 0.24·56pt
         /// 2.16·80pt 3.12pt, 1.41pt 이하도 0.12pt), 여러 줄·물결도 장치 단위 정수 기하다
